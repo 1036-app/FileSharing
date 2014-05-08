@@ -1,0 +1,107 @@
+/*
+ * Copyright (C) 2009 The Android Open Source Project
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.example.hellojni;
+
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.InetAddress;
+import java.net.SocketException;
+
+import android.app.Activity;
+import android.content.Context;
+import android.widget.TextView;
+import android.net.wifi.WifiInfo;
+import android.net.wifi.WifiManager;
+import android.os.Bundle;
+
+
+public class HelloJni extends Activity
+{
+    /** Called when the activity is first created. */
+	String name=null;
+	String ipaddr=null;
+	test tt=new test();
+    @Override
+    public void onCreate(Bundle savedInstanceState)
+    {
+        super.onCreate(savedInstanceState);
+        TextView  tv = new TextView(this);
+        tv.setText( "bbbbbbb" );
+        setContentView(tv);
+        ipaddr=getIp();
+        SendMessage ss=new SendMessage();
+        ss.start();
+        RecvMessage re=new RecvMessage();
+        re.start();
+    }
+
+
+    public String getIp()
+   	{  
+   	    WifiManager wm=(WifiManager)getSystemService(Context.WIFI_SERVICE);  
+   	    if(!wm.isWifiEnabled())                     //检查Wifi状态     
+   	     wm.setWifiEnabled(true);  
+   	    WifiInfo wi=wm.getConnectionInfo();        //获取32位整型IP地址     
+   	    int IpAdd=wi.getIpAddress(); 
+   	    String Ip=intToIp(IpAdd);                 //把整型地址转换成“*.*.*.*”地址  
+   	    return Ip;    
+   	}  
+   	public String intToIp(int IpAdd) 
+   	{  
+   	    return (IpAdd & 0xFF ) + "." +  
+   	    ((IpAdd >> 8 ) & 0xFF) + "." +  
+   	    ((IpAdd >> 16 ) & 0xFF) + "." +  
+   	    ( IpAdd >> 24 & 0xFF) ;  
+   	} 
+
+
+
+    
+    public class SendMessage extends Thread
+	{
+    	private DatagramSocket socket;
+    	private DatagramPacket packet;
+    	private byte[] encodedFrame;
+    	private InetAddress addr = null;
+    	private void init()
+    	{
+    		 name="我是是是是是是是是是事实上";
+    	    try {
+				socket = new DatagramSocket();
+				socket.setBroadcast(true);
+				addr = InetAddress.getByName("255.255.255.255") ;
+				  encodedFrame = new byte[name.getBytes("UTF8").length];// 获得音频数据编码以后的大小
+				   encodedFrame=name.getBytes("UTF8");
+
+			} catch (Exception e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+	
+		packet = new DatagramPacket(encodedFrame, encodedFrame.length,
+				addr, 12000);
+    	}
+		 public void run() 
+		 {
+			// init();
+			 
+		//  try {
+		//	socket.send(packet);
+		//  } catch (Exception e) 
+		//  {
+       //   e.printStackTrace();
+       //   }
+	 name="
