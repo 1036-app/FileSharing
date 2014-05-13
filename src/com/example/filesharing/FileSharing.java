@@ -22,23 +22,20 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Timer;
-import java.util.TimerTask;
-
 import android.app.Activity;
+import android.app.ActivityManager;
 import android.content.Context;
 import android.text.method.ScrollingMovementMethod;
 import android.view.View;
 import android.view.View.OnClickListener;
 import android.widget.Button;
-import android.widget.EditText;
 import android.widget.TextView;
+import android.widget.Toast;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
 import android.os.Bundle;
@@ -56,7 +53,6 @@ public class FileSharing extends Activity
 	public static String bcastaddress="";
 	public sendThread sThread=null;
 	public recvThread rThread=null;	
-	public recvfile refile=null;
 	public Button stop=null;
 	public TextView information = null;
     int sendFileID=0;
@@ -76,6 +72,7 @@ public class FileSharing extends Activity
     String message=null;
 	public FileObserver mFileObserver;
 	public String sharedPath=null;
+	public static int blocklength=1024;  //每块的大小1k
     @Override
     public void onCreate(Bundle savedInstanceState)
     {
@@ -87,24 +84,92 @@ public class FileSharing extends Activity
         System.out.println("我的广播地址是："+bcastaddress);
         rThread=new recvThread(ipaddress,port);
         rThread.start();
-        refile=new recvfile();
-        refile.start();
-        
-       
-      
+             
         information=(TextView) findViewById(R.id.information);
         information.setMovementMethod(ScrollingMovementMethod.getInstance());
         information.setScrollbarFadingEnabled(false);  
         stop=(Button)findViewById(R.id.stopbutton);
         stop.setOnClickListener(new stopClickListener());
-         myHandler = new Handler()
+ 
+        ActivityManager activityManager = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
+        System.out.println("APP内存大小："+activityManager.getMemoryClass()) ;
+        information.append("APP内存大小："+activityManager.getMemoryClass()+"\n");	
+        myHandler = new Handler()
         {
         	public void handleMessage(Message Msg)
         	{
+        		if(Msg.arg1==0)
+        		{
         		String s = (String) Msg.obj;
-        		information.append(s+"\n");
-        	 }
-        };
+        		information.append(s+"\n");	
+        		if(s.equals("生成文件"))
+        		   Toast.makeText(FileSharing.this,"生成文件",Toast.LENGTH_LONG ).show();
+        		}
+        		else if(Msg.arg1==1)
+        		{
+        		    Packet[] recvPacket=(Packet[]) Msg.obj;
+        		    System.out.println("收到接收线程发送来的包");		  
+        		    Packet p=recvPacket[0];
+        	        if(p.type==0&&recvPacket.length>=p.data_blocks)
+        		    {
+        		       information.append( "收到的是数据包\n");	
+        		       decode(recvPacket);	  //调用解码函数
+        		    }		 
+        		    if(p.type==1)
+        		    {	
+        			    int v0 = (p.data[0] & 0xff) << 24;//&0xff将byte值无差异转成int,避免Java自动类型提升后,会保留高位的符号位	
+        			    int v1 = (p.data[1] & 0xff) << 16;
+        			    int v2 = (p.data[2] & 0xff) << 8;
+        			    int v3 = (p.data[3] & 0xff) ;
+        			    int loss= v0 + v1 + v2 + v3;
+        			    information.append( "反馈包显示丢失包的数量  "+loss+"\n");
+        		        if(sendFiles.containsKey(p.fileID)) 
+        		        {
+        		           information.append( "**收到的是对自己的反馈包\n");	  
+        		           if(Feedpkts.containsKey(p.fileID))
+        			        {
+        				        if(Feedpkts.get(p.fileID)<loss)
+        				         {
+        				             Feedpkts.remove(p.fileID);
+        				             Feedpkts.put(p.fileID, loss);
+        				         }
+        			        }
+        		        	else
+        			        {
+        				       Feedpkts.put(p.fileID, loss);
+        				       information.append("开始计时："+p.fileID+"\n");
+        				       sendtask=new SendTask(p.fileID);
+        				       feedtimer = new Timer(true);
+        				       feedtimer.schedule(sendtask,1000,1000); //1s的超时
+        				       feedTimers.put(p.fileID, feedtimer);
+        			        }
+        		      }
+        	         else
+        	         {
+        	        	information.append("$$收到的是别人的反馈包\n");
+        	         	int k=0;
+        	        	for(;k<othersFeedpkt.size();k++)
+        		        {
+        			        if(othersFeedpkt.get(k).fileID.equals(p.fileID))
+        		          	{
+        			        	if(othersFeedpkt.get(k).loss<loss)
+        			         	{
+        					     othersFeedpkt.get(k).loss=loss;
+        					     othersFeedpkt.get(k).time=System.currentTimeMillis();
+        				         }
+        				        break;
+        			       }	
+        		       }
+        		      if(othersFeedpkt.size()==k)
+        		       {
+        		          otherFeedData ofd=new otherFeedData(p.fileID,loss,System.currentTimeMillis());
+        			      othersFeedpkt.add(ofd);
+        		       }
+        	       }
+              }
+          }       			
+      }	       	
+  };
         //要先创建一个文件夹
         sharedPath="//sdcard//SharedFiles";
         File SharedDir=new File(sharedPath);
@@ -204,6 +269,7 @@ public class FileSharing extends Activity
     {
     	Packet[] sendPacket=null; 
         sendPacket=encode(filename,null);
+       
         if(sendPacket!=null)
         {
         sThread=new sendThread(sendPacket,bcastaddress,port,0,sendPacket[0].data_blocks,sendPacket[0].data_blocks);
@@ -211,12 +277,12 @@ public class FileSharing extends Activity
         message = "发送的包的个数: "+sendPacket[0].data_blocks;
 		messageHandle(message);
 		sendFiles.put(sendPacket[0].fileID,sendPacket[0].filename);  //加入到发送文件列表
+       
         }	
     }
     public Packet[] encode(String filename,String fileID)
     {
     	 int filelength;
-         int blocklength = 5000;
          int data_blocks;
          int coding_blocks;
          Packet[] plist =null;
@@ -226,7 +292,12 @@ public class FileSharing extends Activity
         	String file=sharedPath+"//"+filename;
  			fis = new FileInputStream(file);
  			filelength = fis.available();
- 			System.out.println("待编码文件长度 "+filelength);
+ 			if(fileID==null)
+ 			{
+ 			message = "待编码文件长度 "+filelength;
+ 			messageHandle(message);
+ 			}
+ 			
  		if(filelength>0)
  		 {
  			BufferedInputStream in = new BufferedInputStream(fis);
@@ -240,7 +311,8 @@ public class FileSharing extends Activity
  			}
  			
  			coding_blocks = data_blocks;
- 			
+ 			message = "数据包: "+data_blocks;
+ 			messageHandle(message);
  			plist = new Packet[data_blocks+coding_blocks];
  			
  			byte[][] origindata = new byte[data_blocks][blocklength];
@@ -263,7 +335,7 @@ public class FileSharing extends Activity
  						
  			}
  			
- 	        int w=8;
+ 	        int w=16;
  	        
  	        int[] matrix = ReedSolomon.reed_sol_vandermonde_coding_matrix(data_blocks, coding_blocks, w);
  			
@@ -303,7 +375,8 @@ public class FileSharing extends Activity
  		} catch (IOException e) {		
  			e.printStackTrace();
  		}
-      
+     message = "编码完毕 ";
+	 messageHandle(message);
       return plist;
 	}
 
@@ -318,7 +391,7 @@ public class FileSharing extends Activity
     	int block_length = p.data_length;
     	int file_length = p.file_length;
     	String recvFilename=p.filename;
-    	int w=8;
+    	int w=16;
     	byte[][] recvdata = new byte[data_blocks][block_length];
     	byte[][] recvcode = new byte[coding_blocks][block_length];
     	
@@ -369,7 +442,7 @@ public class FileSharing extends Activity
     		remain = remain - process;
     		k++;
     	}
-    	message="#####生成文件####";
+    	message="生成文件";
     	messageHandle(message);
     	recvFiles.add(recvFilename);  //放入接收文件列表中
     	System.out.println("接收文件列表的大小："+ recvFiles.size());
@@ -408,109 +481,14 @@ public class FileSharing extends Activity
 	    ( IpAdd >> 24 & 0xFF) ;  
 	} 
 	
-	public void messageHandle(String mess)
+	public static void messageHandle(String mess)
 	{
 		 Message m = new Message();
 		 m.obj = mess;
+		 m.arg1=0;
 		 myHandler.sendMessage(m);
 	}
-	
-	public class recvfile extends Thread
-	{
-		public boolean running=true;
-		public Packet[] lastPacket=null;
-		@Override
-		public void run() 
-		{
-		while(running)
-		 {
-		    Packet[] recvPacket=null;
-			recvPacket=rThread.getPacket();	
-			if(recvPacket!=null)
-			{		  
-			    Packet p=recvPacket[0];
-			  if(p.type==0&&recvPacket.length>=p.data_blocks)
-			  {
-				  message = "收到的是数据包";
-				  messageHandle(message);
-				  decode(recvPacket);	  //调用解码函数
-			  }		 
-			  if(p.type==1)
-			  {
-					int v0 = (p.data[0] & 0xff) << 24;//&0xff将byte值无差异转成int,避免Java自动类型提升后,会保留高位的符号位	
-					int v1 = (p.data[1] & 0xff) << 16;
-					int v2 = (p.data[2] & 0xff) << 8;
-					int v3 = (p.data[3] & 0xff) ;
-					int loss= v0 + v1 + v2 + v3;
-					message = "反馈包显示丢失包的数量  "+loss;
-				     messageHandle(message);
-			  if(sendFiles.containsKey(p.fileID)) 
-			   {
-				message = "**收到的是对自己的反馈包";
-			    messageHandle(message);
-				if(Feedpkts.containsKey(p.fileID))
-				{
-					if(Feedpkts.get(p.fileID)<loss)
-					{
-					Feedpkts.remove(p.fileID);
-					Feedpkts.put(p.fileID, loss);
-					}
-				}
-				else
-				{
-					Feedpkts.put(p.fileID, loss);
-					message = "开始计时："+p.fileID;
-				     messageHandle(message);
-					sendtask=new SendTask(p.fileID);
-				    feedtimer = new Timer(true);
-				    feedTimers.put(p.fileID, feedtimer);
-					feedtimer.schedule(sendtask,3000,3000); //3s的超时
-					
-				}
-			  }
-			  else
-			  {
-				message = "$$收到的是别人的反馈包";
-			     messageHandle(message);
-				int k=0;
-				for(;k<othersFeedpkt.size();k++)
-				{
-					if(othersFeedpkt.get(k).fileID.equals(p.fileID))
-					{
-						if(othersFeedpkt.get(k).loss<loss)
-						{
-							othersFeedpkt.get(k).loss=loss;
-							othersFeedpkt.get(k).time=System.currentTimeMillis();
-						}
-						break;
-					}	
-				}
-				if(othersFeedpkt.size()==k)
-				{
-					otherFeedData ofd=new otherFeedData(p.fileID,loss,System.currentTimeMillis());
-					othersFeedpkt.add(ofd);
-				}
 
-			  }
-		  }
-		}
-			try {
-			   sleep(10);
-			} catch (InterruptedException e)
-			{			
-				e.printStackTrace();
-			}
-		 }	
-		}
-		
-		@Override
-		public void destroy()
-		{
-			running=false;	
-		}		
-	}
-
-	
 public class SendTask extends java.util.TimerTask
 {
 	public String fileID;
@@ -527,7 +505,7 @@ public class SendTask extends java.util.TimerTask
 			int number=Feedpkts.get(fileID);
 	        message = "超时，再发 "+number+" 个包";
 		    messageHandle(message);
-		    
+			Feedpkts.remove(fileID);
 		    if(feedTimers.containsKey(fileID))
 		    {
 		    	feedTimers.get(fileID).cancel();  
@@ -543,7 +521,7 @@ public class SendTask extends java.util.TimerTask
 		        {
 		        sThread=new sendThread(sPacket,bcastaddress,port,sPacket[0].data_blocks,sPacket.length,number);
 				sThread.start();    
-				Feedpkts.remove(fileID);      
+			      
 		        }		    
 		    }
 		
@@ -572,7 +550,7 @@ public class OtherTask extends java.util.TimerTask
   {
    if(mFileObserver!=null ) 
 	 mFileObserver.stopWatching(); //停止监听
-   refile.destroy();
+ //  refile.destroy();
    rThread.destroy();
    othertimer.cancel();
    if(sThread!=null)

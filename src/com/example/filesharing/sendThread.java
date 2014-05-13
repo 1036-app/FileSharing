@@ -34,6 +34,8 @@ public class sendThread extends Thread
 	}
 	public void init()
 	{
+		 String message ="进入发送函数";
+		 FileSharing.messageHandle(message);
 		try {
 			socket = new DatagramSocket();
 			socket.setBroadcast(true);	 
@@ -51,10 +53,11 @@ public class sendThread extends Thread
 	         ByteArrayOutputStream baos = new ByteArrayOutputStream();  
 	         ObjectOutputStream oos = new ObjectOutputStream(baos);  
 	         oos.writeObject(pt);
-	         messages = baos.toByteArray();  
+	         messages = baos.toByteArray();   //Packet类中除去data,其它字段的大小是261左右个字节，实验得出的。
 	         baos.close();  
 	         oos.close(); 
-	         packet = new DatagramPacket(messages, messages.length,addr, port);
+	         System.out.println("messages.length "+messages.length);
+	         packet = new DatagramPacket(messages, messages.length,addr, port);        
 	         socket.send(packet);
 	         System.out.println("发送ING "+i);
 	        }  
@@ -82,6 +85,7 @@ public class sendThread extends Thread
 			   if(number<to-from)
 			   {
 				//  选择冗余包发送
+				   System.out.println("选择冗余包发送");
 			      Object [] values = new Object[number];  
 			      Random random = new Random();
 			      HashMap<Integer, Integer> hashMap = new HashMap<Integer,Integer>();   
@@ -114,10 +118,9 @@ public class sendThread extends Thread
 		  
 		  else   //发送线程发送数据包或者是反馈包 ，from=0
 		  {
+			  System.out.println("发送线程发送数据包或者是反馈包 ");
 			  int num=0;
 			  num=to-from;
-			  if(num>2)
-				 num=3;	
 			   for(int i=0;i<num;i++)
 			     {	  
 				 Packet pt=plist[i];
