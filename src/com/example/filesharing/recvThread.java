@@ -279,7 +279,7 @@ public class recvThread extends Thread
       
           if(len<total)
            {
-     		  mess ="长时间没收到包,文件： "+fileID+",包："+len+" 个 。";
+     		  mess ="超时，收到文件： "+fileID+",包："+len+" 个 。";
      		  FileSharing.messageHandle(mess);
         	  //发送反馈包
 			  int lossPkts=total-len ;

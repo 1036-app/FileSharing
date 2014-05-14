@@ -56,7 +56,6 @@ public class sendThread extends Thread
 	         messages = baos.toByteArray();   //Packet类中除去data,其它字段的大小是261左右个字节，实验得出的。
 	         baos.close();  
 	         oos.close(); 
-	         System.out.println("messages.length "+messages.length);
 	         packet = new DatagramPacket(messages, messages.length,addr, port);        
 	         socket.send(packet);
 	         System.out.println("发送ING "+i);
