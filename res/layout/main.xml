@@ -6,22 +6,31 @@
     
  <TextView android:id="@+id/tishi"
        android:layout_width="fill_parent"
-        android:layout_height="wrap_content" 
+        android:layout_height="wrap_content"
         android:background="@android:color/background_light"
-         android:textSize="20sp" 
+         android:textSize="30px" 
          android:textColor="@android:color/black" 
          android:text="提示信息" /> 
          
-  <TextView android:id="@+id/information" 
-      android:layout_width="fill_parent"
-       android:layout_height="380dip"
+<ScrollView android:id="@+id/sv_show" 
+        android:layout_width="fill_parent" 
+        android:layout_height="570px"
         android:background="@android:color/darker_gray" 
+        android:scrollbarAlwaysDrawVerticalTrack="true" 
+        android:scrollbars="vertical" > 
+ 
+  <TextView android:id="@+id/information" 
+        android:layout_width="fill_parent"
+        android:layout_height="wrap_content"
         android:textSize="15sp" 
         android:textColor="@android:color/white" 
         android:singleLine="false" 
         android:scrollbars="vertical" 
-        android:maxLines="17" /> 
+   
+       /> 
         
+  </ScrollView>
+      
   <Button android:id="@+id/stopbutton" 
       android:layout_width="fill_parent" 
       android:layout_height="wrap_content"

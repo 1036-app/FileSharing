@@ -34,6 +34,7 @@ import android.text.method.ScrollingMovementMethod;
 import android.view.View;
 import android.view.View.OnClickListener;
 import android.widget.Button;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 import android.net.wifi.WifiInfo;
@@ -41,6 +42,7 @@ import android.net.wifi.WifiManager;
 import android.os.Bundle;
 import android.os.FileObserver;
 import android.os.Handler;
+import android.os.Looper;
 import android.os.Message;
 import eu.vandertil.jerasure.jni.Jerasure;
 import eu.vandertil.jerasure.jni.ReedSolomon;
@@ -55,11 +57,14 @@ public class FileSharing extends Activity
 	public recvThread rThread=null;	
 	public Button stop=null;
 	public TextView information = null;
+	public ScrollView mScrollView =null;
     public static int sendFileID=0;
     public static int port=40000;
     public int maxLoss=0;
     public static Handler myHandler=null;
+    public static Handler recvHandler= null;
     public static boolean sendFinished=false;
+    public Map<String,Integer>nextseq=new HashMap<String,Integer>();
     public HashMap<String ,Integer> Feedpkts=new HashMap<String ,Integer>(); //反馈包的文件号，丢包数
     public static ArrayList<otherFeedData>othersFeedpkt=new ArrayList<otherFeedData>();//其他人的反馈包信息
     public HashMap<String,String>sendFiles=new HashMap<String,String>();
@@ -73,6 +78,7 @@ public class FileSharing extends Activity
 	public FileObserver mFileObserver;
 	public static String sharedPath=null;
 	public static int blocklength=1024;  //每块的大小1k
+	public static int totalBlocks=0;
     @Override
     public void onCreate(Bundle savedInstanceState)
     {
@@ -83,28 +89,40 @@ public class FileSharing extends Activity
         information.setScrollbarFadingEnabled(false);  
         stop=(Button)findViewById(R.id.stopbutton);
         stop.setOnClickListener(new stopClickListener());
-   
+        mScrollView = (ScrollView)findViewById(R.id.sv_show);
+        
         ipaddress=getIp();
         bcastaddress="255.255.255.255";
         information.append("我的IP地址是："+ipaddress+"\n");
         information.append("我的广播地址是："+bcastaddress+"\n");
         rThread=new recvThread(ipaddress,port);
         rThread.start();
-             
-      
+   
+        
         ActivityManager activityManager = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
         information.append("手机容许线程内存："+activityManager.getMemoryClass()+"M\n");	
+
         myHandler = new Handler()
         {
         	public void handleMessage(Message Msg)
         	{
         		if(Msg.arg1==0)
         		{
-        		String s = (String) Msg.obj;
-        		information.append(s+"\n");	
-        		if(s.equals("生成文件"))
+        		  String s = (String) Msg.obj;
+        		  information.append(s+"\n");	
+        		  if (mScrollView!= null&&information!= null)
+                  { 
+        			//getMeasuredHeight()是实际View的大小，与屏幕无关，而getHeight的大小此时则是屏幕的大小,单位px。
+        			if(information.getMeasuredHeight()>mScrollView.getHeight())
+        			{
+                    int offset = information.getMeasuredHeight()-mScrollView.getHeight(); 
+                    mScrollView.scrollTo(0,offset+30); //TextView tishi的高度是30px
+        			}
+                   
+                  }
+        		  if(s.equals("生成文件"))
         		   Toast.makeText(FileSharing.this,"生成文件",Toast.LENGTH_LONG ).show();
-        		}
+        		}  
         		else if(Msg.arg1==1)
         		{
         		    Packet[] recvPacket=(Packet[]) Msg.obj;
@@ -144,8 +162,8 @@ public class FileSharing extends Activity
         				       feedTimers.put(p.fileID, feedtimer);
         			        }
         		      }
-        	         else
-        	         {
+        	             else
+        	               {
         	        	information.append("$$收到的是别人的反馈包\n");
         	         	int k=0;
         	        	for(;k<othersFeedpkt.size();k++)
@@ -158,19 +176,18 @@ public class FileSharing extends Activity
         					     othersFeedpkt.get(k).time=System.currentTimeMillis();
         				         }
         				        break;
-        			       }	
-        		       }
-        		      if(othersFeedpkt.size()==k)
-        		       {
-        		          otherFeedData ofd=new otherFeedData(p.fileID,loss,System.currentTimeMillis());
+        			        }	
+        		        }
+        		       if(othersFeedpkt.size()==k)
+        		        {
+        		           otherFeedData ofd=new otherFeedData(p.fileID,loss,System.currentTimeMillis());
         			      othersFeedpkt.add(ofd);
-        		       }
-        	       }
-              }
+        		        }
+        	             }
+                  }
           }
-       
-      }	       	
-  };
+        }	       	
+     };
         //要先创建一个文件夹
         sharedPath="//sdcard//SharedFiles";
         File SharedDir=new File(sharedPath);
@@ -249,8 +266,11 @@ public class FileSharing extends Activity
      		   {
      		   String key=null;
      		   key=(String)it.next();
-     	       if(sendFiles.get(key).equals(path))  
+     	       if(sendFiles.get(key).equals(path)) 
+     	        {
      			  sendFiles.remove(key);   //从发送文件列表删除
+     			  nextseq.remove(key);     //对应文件的下一个子包序号列表也要删除
+     		    }
      		   }
       		  }
         	   break;
@@ -268,16 +288,17 @@ public class FileSharing extends Activity
     }
     public void sendToAll (String filename)
     {
+    	totalBlocks=0;
      	Packet[] sendPacket=null; 
         sendPacket=encode(filename,null);    		
         if(sendPacket!=null)
         {
-        sThread=new sendThread(sendPacket,bcastaddress,port,0,sendPacket[0].data_blocks,sendPacket[0].data_blocks);
+        sThread=new sendThread(sendPacket,bcastaddress,port,0,sendPacket[0].data_blocks);
         sThread.start();    //各参数的意思如下：发送的文件包，地址，端口，开始的子包序号，结束的序号，发送包的数量
         message = "发送的包的个数: "+sendPacket[0].data_blocks;
 		messageHandle(message);
 		sendFiles.put(sendPacket[0].fileID,sendPacket[0].filename);  //加入到发送文件列表
-		
+		nextseq.put(sendPacket[0].fileID, sendPacket[0].data_blocks);
         }	
     }
     public Packet[] encode(String filename,String fileID)
@@ -501,11 +522,9 @@ public class SendTask extends java.util.TimerTask
   	   { 
 		 if(Feedpkts.containsKey(fileID))
 		 {
-			 //找到文件再发一遍
 			int number=Feedpkts.get(fileID);
 	        message = "超时，再发 "+number+" 个包";
 		    messageHandle(message);
-		    System.out.println("超时，再发 "+number+" 个包");
 			Feedpkts.remove(fileID);
 		    if(feedTimers.containsKey(fileID))
 		    {
@@ -518,13 +537,31 @@ public class SendTask extends java.util.TimerTask
 		     fileName=sendFiles.get(fileID);
 		     Packet[] sPacket=null; 
 		     sPacket=encode(fileName,fileID);
-		        if(sPacket!=null)
-		        {
-		        sThread=new sendThread(sPacket,bcastaddress,port,sPacket[0].data_blocks,sPacket.length,number);
-				sThread.start();    
-			      
-		        }		    
-		    }
+		     int Start=nextseq.get(fileID);
+		     nextseq.remove(fileID); 
+		     System.out.println("超时，再发 "+number+" 个包");
+		     System.out.println("本次开始发送的子包序号  "+Start);
+		     if(sPacket!=null)
+		     {
+		    	 int nextStart=Start+number;
+				 int total=sPacket[0].data_blocks+sPacket[0].coding_blocks;
+				 if(nextStart>=total)
+				   {
+				       nextStart=nextStart-total;
+				       nextseq.put(fileID,nextStart);
+				   }
+				    else
+				   {
+				       nextseq.put(fileID,nextStart);
+				   }
+				System.out.println("总共发送了"+totalBlocks+"个包");
+				System.out.println("下一次开始发送的包序号： "+nextStart);
+		        sThread=new sendThread(sPacket,bcastaddress,port,Start,number);
+				sThread.start();          
+				
+		     }
+		       
+		   }
 		
 		 }
   	  }
@@ -551,7 +588,8 @@ public class OtherTask extends java.util.TimerTask
   {
    if(mFileObserver!=null ) 
 	 mFileObserver.stopWatching(); //停止监听
- //  refile.destroy();
+   if(recvHandler!=null)
+     recvHandler.getLooper().quit(); 
    rThread.destroy();
    othertimer.cancel();
    if(sThread!=null)

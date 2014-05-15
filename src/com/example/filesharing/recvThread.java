@@ -15,7 +15,6 @@ import java.util.Map;
 import java.util.Random;
 import java.util.Timer;
 
-
 import android.os.Message;
 
 
@@ -102,11 +101,11 @@ public class recvThread extends Thread
 			   FileSharing.messageHandle(message);
 			   recvPacket=new Packet[1];
 	           recvPacket[0]=pt;
-	           
 	           Message msg = new Message();
 	           msg .obj = recvPacket;
 	           msg .arg1=1;
-	           FileSharing.myHandler.sendMessage(msg );
+	           FileSharing.myHandler.sendMessage(msg);
+	           
 		   }
 		   else
 		   {
@@ -197,6 +196,7 @@ public class recvThread extends Thread
 				           msg .obj = recvPacket;
 				           msg .arg1=1;
 				           FileSharing.myHandler.sendMessage(msg);
+
 					   }
 						   
 			   }
@@ -238,7 +238,7 @@ public class recvThread extends Thread
 		pt[0]=FeedBack;
 		mess ="***·¢ËÍ·´À¡°ü";
 		FileSharing.messageHandle(mess);
-		sendThread st=new sendThread(pt,FileSharing.bcastaddress,FileSharing.port,0,1,1);
+		sendThread st=new sendThread(pt,FileSharing.bcastaddress,FileSharing.port,0,1);
 		st.start();	
 		}
 	}
@@ -289,7 +289,6 @@ public class recvThread extends Thread
 		}
 	  }
 	}
-	
 	public void destroy() 
 	{
 		running=false;

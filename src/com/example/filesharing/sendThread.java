@@ -21,21 +21,18 @@ public class sendThread extends Thread
 	private Packet []plist=null;
 	private int port=0;
 	private int from=0;
-	private int to=0;
 	private int number=0;
-	sendThread(Packet []plist,String castIP,int port,int from,int to,int number)
+	sendThread(Packet []plist,String castIP,int port,int from,int number)
 	{
 		this.plist=plist;
 		this.castIP=castIP;
 		this.port=port;
 		this.from=from;
-		this.to=to;
 		this.number=number;
 	}
 	public void init()
 	{
-		 String message ="进入发送函数";
-		 FileSharing.messageHandle(message);
+		 System.out.println("进入发送函数");
 		try {
 			socket = new DatagramSocket();
 			socket.setBroadcast(true);	 
@@ -48,6 +45,7 @@ public class sendThread extends Thread
 	
 	public void sendPacket(Packet pt,int i)
 	{
+		FileSharing.totalBlocks++;
 		byte[] messages=null;
 		try {  
 	         ByteArrayOutputStream baos = new ByteArrayOutputStream();  
@@ -78,58 +76,23 @@ public class sendThread extends Thread
 		 init();
 		 if(plist!=null&&plist.length>0)
 		 {  
-		 
-			 if(from>0)  //发送的是冗余包
-		     {
-			   if(number<to-from)
-			   {
-				//  选择冗余包发送
-				   System.out.println("选择冗余包发送");
-			      Object [] values = new Object[number];  
-			      Random random = new Random();
-			      HashMap<Integer, Integer> hashMap = new HashMap<Integer,Integer>();   
-			      while(hashMap.size()<number)   // 生成随机数字并存入HashMap
-			      {
-			        int num = random.nextInt(to);
-			        if(num>=from)
-			        {
-			    	  hashMap.put(num, 1);
-			        }
-			   
-			      }   
-		
-			     values=hashMap.keySet().toArray();
-			     for(int j=0;j<number;j++)  //hashMap中放的就是不重复的number个随机数
-			      {
-				  int num=Integer.parseInt(values[j].toString());
-				  sendPacket(plist[num], plist[num].seqno); 
-			      }
-			   }
-			   
-			   else if(number==to-from)
-			   {
-				// 冗余包全部发送 ; 
-				 for(int k=from;k<to;k++)
-				  sendPacket(plist[k], plist[k].seqno); 
-			   }
-		
-		  }
-		  
-		  else   //发送线程发送数据包或者是反馈包 ，from=0
-		  {
-			  System.out.println("发送线程发送数据包或者是反馈包 ");
-			  int num=0;
-			  num=to-from;
-			   for(int i=0;i<num;i++)
-			     {	  
-				 Packet pt=plist[i];
-				 sendPacket(pt, i);
-			     }
-			  
-		  }
-			
-	}		
-  }
+			 int total_blocks=plist[0].data_blocks+plist[0].coding_blocks;
+			 int too=from+number;
+			 if(too<=total_blocks)
+			 {
+				 for(int i=0;i<number;i++)
+				    sendPacket(plist[from+i] ,from+i);
+			 }
+			 else
+			 {
+				for(int j=from;j<total_blocks;j++)
+					 sendPacket(plist[j] ,j);
+				int off=from+number-total_blocks;
+				for(int i=0;i<off;i++)
+					sendPacket(plist[i] ,i);
+			 }
+	    }		
+    }
 	
 	public void destroy() 
 	{	
