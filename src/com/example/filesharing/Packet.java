@@ -4,21 +4,21 @@ import java.io.Serializable;
 
 public class Packet implements Serializable
 {
-	String fileID;
+	String sub_fileID;
 	String filename;
+	int totalsubFiles;
 	int type;  //0为数据，1为反馈包
-	int file_length;
 	int coding_blocks;
 	int data_blocks;
 	int seqno;
 	int data_length;
 	byte[] data;
+	int subFileLength=0;
 	
-	
-	Packet(int type, int file_length, int coding_blocks, int data_blocks, int seqno, int data_length)
+	Packet(int type,int subFileLength, int coding_blocks, int data_blocks, int seqno, int data_length)
 	{
 		this.type = type;
-		this.file_length = file_length;
+		this.subFileLength=subFileLength;
 		this.coding_blocks = coding_blocks;
 		this.data_blocks = data_blocks;
 		this.seqno = seqno;

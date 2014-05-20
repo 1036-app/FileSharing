@@ -2,12 +2,12 @@ package com.example.filesharing;
 
 public class otherFeedData 
 {
-	  public String fileID;
+	    public String sub_fileID;
 	    public int loss;
 	    public long time;
 	    otherFeedData (String fileid,int loss,long time)
 	    {
-	    this.fileID=fileid;
+	    this.sub_fileID=fileid;
 	    this.loss=loss;
 	    this.time=time;
 		}

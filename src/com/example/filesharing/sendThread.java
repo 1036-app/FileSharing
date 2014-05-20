@@ -43,9 +43,8 @@ public class sendThread extends Thread
 		}
 	}
 	
-	public void sendPacket(Packet pt,int i)
+	public void sendPacket(Packet pt,String sub_fileID,int i)
 	{
-		FileSharing.totalBlocks++;
 		byte[] messages=null;
 		try {  
 	         ByteArrayOutputStream baos = new ByteArrayOutputStream();  
@@ -56,7 +55,7 @@ public class sendThread extends Thread
 	         oos.close(); 
 	         packet = new DatagramPacket(messages, messages.length,addr, port);        
 	         socket.send(packet);
-	         System.out.println("发送ING "+i);
+	         System.out.println("发送ING "+sub_fileID+"---packet:"+i);
 	        }  
 		    catch (SocketException e) 
 	        {
@@ -78,18 +77,18 @@ public class sendThread extends Thread
 		 {  
 			 int total_blocks=plist[0].data_blocks+plist[0].coding_blocks;
 			 int too=from+number;
-			 if(too<=total_blocks)
+			 if(too<=total_blocks) //直接发送number个包
 			 {
 				 for(int i=0;i<number;i++)
-				    sendPacket(plist[from+i] ,from+i);
+				    sendPacket(plist[from+i] ,plist[i].sub_fileID,from+i);
 			 }
 			 else
 			 {
-				for(int j=from;j<total_blocks;j++)
-					 sendPacket(plist[j] ,j);
+				for(int j=from;j<total_blocks;j++) //不够的话，再从0开始发
+					 sendPacket(plist[j] ,plist[j].sub_fileID,j);
 				int off=from+number-total_blocks;
 				for(int i=0;i<off;i++)
-					sendPacket(plist[i] ,i);
+					sendPacket(plist[i] ,plist[i].sub_fileID,i);
 			 }
 	    }		
     }

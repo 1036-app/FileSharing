@@ -1,8 +1,10 @@
 package com.example.filesharing;
 
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
@@ -93,44 +95,46 @@ public class recvThread extends Thread
 			    System.out.println(e.toString());
 			    e.printStackTrace();
 			  } 
-		   message ="接收到子包的ID：  "+pt.fileID;
+		   message ="接收到子包的ID：  "+pt.sub_fileID;
 		   FileSharing.messageHandle(message);
+	System.out.println("接收到子包的ID：  "+pt.sub_fileID);
 		   if(pt.type==1)
 		   {
 			   message ="反馈包，发送者："+packet.getAddress().toString();
 			   FileSharing.messageHandle(message);
 			   recvPacket=new Packet[1];
 	           recvPacket[0]=pt;
+	      
 	           Message msg = new Message();
 	           msg .obj = recvPacket;
 	           msg .arg1=1;
 	           FileSharing.myHandler.sendMessage(msg);
-	           
+	   	 
 		   }
 		   else
 		   {
-			  if(!filesID.contains(pt.fileID))
+			  if(!filesID.contains(pt.sub_fileID))
 			  {
 				 int offset=0;  //该文件放在列表中的第offset个表项
 				 int pktLength=0; //接受的包放在了第pktLength个包
 				 //取消计时器
-				 if(recvTimers.containsKey(pt.fileID))
+				 if(recvTimers.containsKey(pt.sub_fileID))
 				 {
-					 recvTimers.get(pt.fileID).cancel();
-		    	     recvTimers.remove(pt.fileID);    
+					 recvTimers.get(pt.sub_fileID).cancel();
+		    	     recvTimers.remove(pt.sub_fileID);    
 				 }
 				 //添加计时器
 					Random random = new Random();
 					long delay=1000+random.nextInt(1000);
 					long frequency=1000+random.nextInt(1000);
 					
-					recvtask=new recvTask(pt.fileID);
+					recvtask=new recvTask(pt.sub_fileID);
 					recvtimer = new Timer(true);
-					recvTimers.put(pt.fileID, recvtimer);
+					recvTimers.put(pt.sub_fileID, recvtimer);
 					recvtimer.schedule(recvtask,delay,frequency);
 					   for(offset=0;offset<lossFiles.size();offset++) 
 					    {
-					        if(pt.fileID.equals(lossFiles.get(offset)[0].fileID))
+					        if(pt.sub_fileID.equals(lossFiles.get(offset)[0].sub_fileID))
 					        {   
 					        	 //已经不是第一次收到该文件
 					        	 int a=1;
@@ -179,14 +183,14 @@ public class recvThread extends Thread
 					   if(pktLength==lossFiles.get(offset)[0].data_blocks )
 					   {
 						   System.out.println("接收完毕，总共接收到的包："+pktLength);
-						   filesID.add(lossFiles.get(offset)[0].fileID);
+						   filesID.add(lossFiles.get(offset)[0].sub_fileID);
 						   //取消接收计时器
-						   if(recvTimers.containsKey(lossFiles.get(offset)[0].fileID))
+						   if(recvTimers.containsKey(lossFiles.get(offset)[0].sub_fileID))
 						     { 
-								 message ="针对文件： "+pt.fileID+" 的计时器 取消,接收包完毕";
+								 message ="针对文件： "+pt.sub_fileID+" 的计时器 取消,接收包完毕";
 								 FileSharing.messageHandle(message);
-						    	 recvTimers.get(pt.fileID).cancel();
-						    	 recvTimers.remove(pt.fileID);
+						    	 recvTimers.get(pt.sub_fileID).cancel();
+						    	 recvTimers.remove(pt.sub_fileID);
 						     }
 						   recvPacket=lossFiles.get(offset);
 						   lossFiles.remove(offset);
@@ -197,8 +201,7 @@ public class recvThread extends Thread
 				           msg .arg1=1;
 				           FileSharing.myHandler.sendMessage(msg);
 
-					   }
-						   
+					   }				   
 			   }
 			  else
 			  {
@@ -216,7 +219,8 @@ public class recvThread extends Thread
 		boolean isSend=true;
 		for(int k=0;k<FileSharing.othersFeedpkt.size();k++)
 		{
-		  if(FileSharing.othersFeedpkt.get(k).fileID.equals(id)&&FileSharing.othersFeedpkt.get(k).loss>=lossPkts)
+		  boolean istrue=FileSharing.othersFeedpkt.get(k).sub_fileID.equals(id);
+		  if(istrue&&FileSharing.othersFeedpkt.get(k).loss>=lossPkts)
 		  {
 			 mess ="其他人已经发送了反馈包";
 			 FileSharing.messageHandle(mess);
@@ -225,40 +229,49 @@ public class recvThread extends Thread
 		  }
 		}
 		if(isSend)
-		{
-		Packet FeedBack=new Packet(1,0,0,1,0,0);
-	    FeedBack.fileID=id;
-	    byte[] data = new byte[4];
-		FeedBack.data=data;
-	    FeedBack.data[0] = (byte)(lossPkts >>> 24);//取最高8位放到0下标				 
-	    FeedBack.data[1] = (byte)(lossPkts >>> 16);//取次高8为放到1下标			 
-	    FeedBack.data[2] = (byte)(lossPkts >>> 8); //取次低8位放到2下标 
-	    FeedBack.data[3] = (byte)(lossPkts );      //取最低8位放到3下标
-		Packet[]pt=new Packet[1];
-		pt[0]=FeedBack;
+		{	
+		byte[]messages=null;
+		Packet FBK=new Packet(1,0,0,1,0,0);
+	    FeedBackData FeedBack=new FeedBackData(id,lossPkts);
+		 try {  
+	         ByteArrayOutputStream baos = new ByteArrayOutputStream();  
+	         ObjectOutputStream oos = new ObjectOutputStream(baos);  
+	         oos.writeObject(FeedBack);
+	         messages = baos.toByteArray();   
+	         baos.close();  
+	         oos.close(); 
+		 }
+	      catch(Exception e) 
+	      {   
+	         e.printStackTrace();  
+	      } 
+		 FBK.sub_fileID=id;
+		 FBK.data=messages;
+		 Packet[]p=new Packet[1];
+		 p[0]=FBK;
 		mess ="***发送反馈包";
 		FileSharing.messageHandle(mess);
-		sendThread st=new sendThread(pt,FileSharing.bcastaddress,FileSharing.port,0,1);
+		sendThread st=new sendThread(p,FileSharing.bcastaddress,FileSharing.port,0,1);
 		st.start();	
 		}
 	}
 	
 	public class recvTask extends java.util.TimerTask
 	{
-        public String fileID; 
+        public String sub_fileID; 
         public Packet[] pkt=null;
         public int[] subSeq=null;
         public int len=0;
-		recvTask(String fileid)
+		recvTask(String sub_fileID)
 		{
-		this.fileID=fileid;	
+		this.sub_fileID=sub_fileID;	
 		}
 		@Override
 		public void run() 
 		{
 			for(int m=0;m<lossFiles.size();m++)
 			{
-				if(lossFiles.get(m)[0].fileID.equals(fileID))
+				if(lossFiles.get(m)[0].sub_fileID.equals(sub_fileID))
 				{
 					pkt=lossFiles.get(m);
 					subSeq=pktIDs.get(m);
@@ -279,12 +292,12 @@ public class recvThread extends Thread
       
           if(len<total)
            {
-     		  mess ="超时，收到文件： "+fileID+",包："+len+" 个 。";
+     		  mess ="超时，收到文件： "+sub_fileID+",包："+len+" 个 。";
      		  FileSharing.messageHandle(mess);
         	  //发送反馈包
 			  int lossPkts=total-len ;
-			  sendFeedBack(fileID,lossPkts) ;		
-		
+			  sendFeedBack(pkt[0].sub_fileID,lossPkts) ;
+			  //反馈包中只要发送文件id,文件的块号，和丢包数量就可
          } 
 		}
 	  }
@@ -304,8 +317,8 @@ public class recvThread extends Thread
 		   String key=null;
 		   key=(String)it.next();
 		   recvTimers.get(key).cancel();  //防止还有计时器在运行
-		   recvTimers.remove(key);
 		   }
+		  recvTimers.clear();
 		}
 	}	
 }

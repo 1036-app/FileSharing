@@ -1,12 +1,14 @@
 package com.example.filesharing;
 
-public class FeedBackData 
+import java.io.Serializable;
+
+public class FeedBackData implements Serializable
 {
-	String fileID;
+	String sub_fileID;
    	int loss;
    	FeedBackData(String fileid,int l)
    	{
-   		this.fileID=fileid;
+   		this.sub_fileID=fileid;
    		this.loss=l;
    	}
 }
