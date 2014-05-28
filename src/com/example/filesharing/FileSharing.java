@@ -68,6 +68,7 @@ import eu.vandertil.jerasure.jni.ReedSolomon;
 public class FileSharing extends Activity
 {
     /** Called when the activity is first created.*/
+	/** Called when the activity is first created.*/
 	test tt=new test();
 	public static String ipaddress="";
 	public static String bcastaddress="";
