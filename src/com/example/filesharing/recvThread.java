@@ -95,21 +95,15 @@ public class recvThread extends Thread
 			    System.out.println(e.toString());
 			    e.printStackTrace();
 			  } 
-		   message ="接收到子包的ID：  "+pt.sub_fileID;
-		   FileSharing.messageHandle(message);
-	System.out.println("接收到子包的ID：  "+pt.sub_fileID);
-		   if(pt.type==1)
+		   if(pt.type==1||pt.type==2)
 		   {
-			   message ="反馈包，发送者："+packet.getAddress().toString();
-			   FileSharing.messageHandle(message);
 			   recvPacket=new Packet[1];
 	           recvPacket[0]=pt;
 	      
 	           Message msg = new Message();
 	           msg .obj = recvPacket;
 	           msg .arg1=1;
-	           FileSharing.myHandler.sendMessage(msg);
-	   	 
+	           FileSharing.myHandler.sendMessage(msg);	   	 
 		   }
 		   else
 		   {
@@ -117,16 +111,14 @@ public class recvThread extends Thread
 			  {
 				 int offset=0;  //该文件放在列表中的第offset个表项
 				 int pktLength=0; //接受的包放在了第pktLength个包
-				 //取消计时器
 				 if(recvTimers.containsKey(pt.sub_fileID))
 				 {
 					 recvTimers.get(pt.sub_fileID).cancel();
 		    	     recvTimers.remove(pt.sub_fileID);    
 				 }
-				 //添加计时器
 					Random random = new Random();
-					long delay=1000+random.nextInt(1000);
-					long frequency=1000+random.nextInt(1000);
+					long delay=5000+random.nextInt(1000);
+					long frequency=5000+random.nextInt(1000);
 					
 					recvtask=new recvTask(pt.sub_fileID);
 					recvtimer = new Timer(true);
@@ -182,7 +174,8 @@ public class recvThread extends Thread
 					   
 					   if(pktLength==lossFiles.get(offset)[0].data_blocks )
 					   {
-						   System.out.println("接收完毕，总共接收到的包："+pktLength);
+						   System.out.println("接收完毕，总共接收到的包："+pktLength+"个");
+						   System.out.println("lossFiles.get(offset)[0].data_blocks=："+pktLength+"个");
 						   filesID.add(lossFiles.get(offset)[0].sub_fileID);
 						   //取消接收计时器
 						   if(recvTimers.containsKey(lossFiles.get(offset)[0].sub_fileID))
@@ -206,7 +199,7 @@ public class recvThread extends Thread
 			  else
 			  {
 				 message ="该文件已经完全接受，不再需要其他的包";
-				 FileSharing.messageHandle(message);
+				// FileSharing.messageHandle(message);
 			  }
 	
 		    }  
@@ -214,48 +207,6 @@ public class recvThread extends Thread
 	  }
 	}
 
-	public void sendFeedBack(String id,int lossPkts)
-	{
-		boolean isSend=true;
-		for(int k=0;k<FileSharing.othersFeedpkt.size();k++)
-		{
-		  boolean istrue=FileSharing.othersFeedpkt.get(k).sub_fileID.equals(id);
-		  if(istrue&&FileSharing.othersFeedpkt.get(k).loss>=lossPkts)
-		  {
-			 mess ="其他人已经发送了反馈包";
-			 FileSharing.messageHandle(mess);
-			 isSend=false;
-			 break;
-		  }
-		}
-		if(isSend)
-		{	
-		byte[]messages=null;
-		Packet FBK=new Packet(1,0,0,1,0,0);
-	    FeedBackData FeedBack=new FeedBackData(id,lossPkts);
-		 try {  
-	         ByteArrayOutputStream baos = new ByteArrayOutputStream();  
-	         ObjectOutputStream oos = new ObjectOutputStream(baos);  
-	         oos.writeObject(FeedBack);
-	         messages = baos.toByteArray();   
-	         baos.close();  
-	         oos.close(); 
-		 }
-	      catch(Exception e) 
-	      {   
-	         e.printStackTrace();  
-	      } 
-		 FBK.sub_fileID=id;
-		 FBK.data=messages;
-		 Packet[]p=new Packet[1];
-		 p[0]=FBK;
-		mess ="***发送反馈包";
-		FileSharing.messageHandle(mess);
-		sendThread st=new sendThread(p,FileSharing.bcastaddress,FileSharing.port,0,1);
-		st.start();	
-		}
-	}
-	
 	public class recvTask extends java.util.TimerTask
 	{
         public String sub_fileID; 
@@ -294,10 +245,13 @@ public class recvThread extends Thread
            {
      		  mess ="超时，收到文件： "+sub_fileID+",包："+len+" 个 。";
      		  FileSharing.messageHandle(mess);
-        	  //发送反馈包
+     		  System.out.println("超时，收到文件： "+sub_fileID+",包："+len+" 个 。");
+     		  System.out.println("发送反馈包");
 			  int lossPkts=total-len ;
-			  sendFeedBack(pkt[0].sub_fileID,lossPkts) ;
-			  //反馈包中只要发送文件id,文件的块号，和丢包数量就可
+			  ArrayList<Integer>losspkts=new  ArrayList<Integer>();
+			  losspkts.add(lossPkts);
+			  sendFeedBackPackFunction sfb=new sendFeedBackPackFunction(pkt[0].sub_fileID,losspkts,1);
+			  sfb.sendFeedBack();
          } 
 		}
 	  }

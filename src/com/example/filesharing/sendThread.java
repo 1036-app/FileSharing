@@ -32,7 +32,7 @@ public class sendThread extends Thread
 	}
 	public void init()
 	{
-		 System.out.println("进入发送函数");
+		// System.out.println("进入发送函数");
 		try {
 			socket = new DatagramSocket();
 			socket.setBroadcast(true);	 
@@ -75,20 +75,19 @@ public class sendThread extends Thread
 		 init();
 		 if(plist!=null&&plist.length>0)
 		 {  
-			 int total_blocks=plist[0].data_blocks+plist[0].coding_blocks;
 			 int too=from+number;
-			 if(too<=total_blocks) //直接发送number个包
+			 if(too<=plist[0].data_blocks+plist[0].coding_blocks) //直接发送number个包
 			 {
 				 for(int i=0;i<number;i++)
-				    sendPacket(plist[from+i] ,plist[i].sub_fileID,from+i);
+				    sendPacket(plist[from+i] ,plist[from+i].sub_fileID,plist[from+i].seqno);
 			 }
 			 else
 			 {
-				for(int j=from;j<total_blocks;j++) //不够的话，再从0开始发
-					 sendPacket(plist[j] ,plist[j].sub_fileID,j);
-				int off=from+number-total_blocks;
+				for(int j=from;j<plist[0].data_blocks+plist[0].coding_blocks;j++) //不够的话，再从0开始发
+					 sendPacket(plist[j] ,plist[j].sub_fileID,plist[j].seqno);
+				int off=from+number-(plist[0].data_blocks+plist[0].coding_blocks);
 				for(int i=0;i<off;i++)
-					sendPacket(plist[i] ,plist[i].sub_fileID,i);
+					sendPacket(plist[i] ,plist[i].sub_fileID,plist[i].seqno);
 			 }
 	    }		
     }
