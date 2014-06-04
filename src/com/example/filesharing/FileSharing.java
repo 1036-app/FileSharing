@@ -17,15 +17,14 @@ package com.example.filesharing;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
+import java.io.BufferedWriter;
 import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
 import java.io.RandomAccessFile;
 import java.net.Inet4Address;
 import java.net.InetAddress;
@@ -34,15 +33,15 @@ import java.net.SocketException;
 import java.sql.Date;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Queue;
 import java.util.Timer;
 
-import com.example.filesharing.recvThread.recvTask;
 
 
 import android.app.Activity;
@@ -100,9 +99,23 @@ public class FileSharing extends Activity
 	public static final int packet_numbers=100;  //一次发包的个数
 	public static final int maxfilelength=102400;    //文件块大小限制为100k
 
-	
+	public Queue<String> SendFilequeue = new LinkedList<String>();  
+	public Queue<String> sub_filequeue = new LinkedList<String>();
+	public sub_fileTask  subfiletask=null;
+	public Timer subfiletimer=null;
+	public Map<String,Timer> subfiles=new HashMap<String,Timer>();
+	public final int subtime=2000;    
+	public Packet[] SavedencodedPkts=null; 
+	public  listenQueue listenqueue=null;
+	public String sending_subfileid=null;
+	 
+	    
 	public ArrayList<RecvSubfileData>RecvSubFiles=new ArrayList<RecvSubfileData>();
 	public Map<String,Integer>subFile_nums=new HashMap<String,Integer>();
+	public Map<String,Integer>sub_nums=new HashMap<String,Integer>();
+	public static final int block_time=50000;  //文件发送块反馈包的时间
+	public static BufferedWriter bw=null;
+	public  long total_encode_timer=0;
     @Override
     public void onCreate(Bundle savedInstanceState)
     {
@@ -115,6 +128,7 @@ public class FileSharing extends Activity
         stop.setOnClickListener(new stopClickListener());
         mScrollView = (ScrollView)findViewById(R.id.sv_show);
         ipaddress=getIp();
+        total_encode_timer=0;
         bcastaddress="192.168.1.255";
         /* WIFI:255.255.255.255
          * Adhoc:192.168.1.255
@@ -123,11 +137,31 @@ public class FileSharing extends Activity
         information.append("我的广播地址是："+bcastaddress+"\n");
         rThread=new recvThread(ipaddress,port);
         rThread.start();
-   
+        listenqueue=new listenQueue();
+        listenqueue.start();
         
         ActivityManager activityManager = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
         information.append("手机容许线程内存："+activityManager.getMemoryClass()+"M\n");	
-
+  	    SimpleDateFormat formatter = new SimpleDateFormat("HH-mm-ss");
+	    Date curDate = new Date(System.currentTimeMillis());
+	    String m = formatter.format(curDate);
+	    String sPath="//sdcard//Log";
+        File SDir=new File(sPath);
+        if (!SDir.exists())
+        {
+        	SDir.mkdirs();
+        }
+        String logPath=sPath+"//log-"+m+".txt";
+  		File f=new File(logPath);		  
+    	 try {
+			bw=new BufferedWriter(new FileWriter(f));
+		} catch (IOException e1) {
+			e1.printStackTrace();
+		}
+    	 writeLog("filename"+",");
+	     writeLog("fileLength"+",	");
+	     writeLog("time"+",	");
+         writeLog("formatter-time"+",	"+"\r\n");
         myHandler = new Handler()
         {
         	public void handleMessage(Message Msg)
@@ -155,7 +189,6 @@ public class FileSharing extends Activity
         		    Packet p=recvPacket[0];
         	        if(p.type==0&&recvPacket.length>=p.data_blocks)
         		    {
-        	        	System.out.println("p.data_blocks=="+p.data_blocks);
         		       information.append( "收到的是数据包\n");	
         		       decode(recvPacket);	  //调用解码函数
         		    }		 
@@ -192,12 +225,29 @@ public class FileSharing extends Activity
             mFileObserver = new SDCardFileObserver(sharedPath);
             mFileObserver.startWatching(); //开始监听
         }
+       
+        if(mFileObserver==null ) 
+        {
+            mFileObserver = new SDCardFileObserver(sharedPath);
+            mFileObserver.startWatching(); //开始监听
+        }
         //定时更新别人的反馈包列表
         othertimer = new Timer(true);
 	    othertask=new OtherTask();
 		othertimer.schedule(othertask,2000,2000); //每3s更新一次
 	     
    }
+    public static void writeLog(String info)
+    {
+    	  try {
+      		  bw.append(info);
+      		  bw.flush();
+  		    } catch (Exception e) 
+  		    {		
+  			e.printStackTrace();
+  		    }
+
+    }
     /*
      * 处理收到的反馈包，包括块丢失反馈包和单个的包丢失反馈包
      */
@@ -211,11 +261,19 @@ public class FileSharing extends Activity
         }
 	  else
 		  fileid=fb.sub_fileID;
-	  
+	 
 	  	if(sendFiles.containsKey(fileid)) 
-	  	{   
-            synchronized(Feedpkts)
-            {     
+	  	{ 
+	  		if(fb.type==1&&subfiles.containsKey(fb.sub_fileID))
+	        {
+		     synchronized(subfiles)
+		      {
+		        subfiles.get(fb.sub_fileID).cancel();  //收到反馈包后，就取消块计时器
+		        subfiles.remove(fb.sub_fileID);
+		      }
+	        } 
+             synchronized(Feedpkts)
+             {     
 	           int i=0;
 	           for(;i<Feedpkts.size();i++)
 	              {
@@ -269,7 +327,7 @@ public class FileSharing extends Activity
           } 
 	   System.out.println("fb.type="+fb.type);
    }
-   public class SDCardFileObserver extends FileObserver 
+   public class SDCardFileObserver extends FileObserver //是一个线程
     {
        //mask:指定要监听的事件类型，默认为FileObserver.ALL_EVENTS
        public SDCardFileObserver(String path, int mask) 
@@ -304,7 +362,16 @@ public class FileSharing extends Activity
        		myHandler.sendMessage(m);
        	    System.out.println("----"+path + " CLOSE_WRITE");
          	if(Isrecived==false)  //接收的的文件不再发送
-		        sendToAll(path);
+         	{
+         		if(!SendFilequeue.contains(path))
+         		{
+         			synchronized(SendFilequeue)
+         			{
+         			SendFilequeue.add(path);
+         			}
+         			listenqueue.onresume();
+         		}	
+         	}
         	   break;
            case FileObserver.MOVED_TO:
               	s = "----"+path + " MOVED_TO";
@@ -312,7 +379,17 @@ public class FileSharing extends Activity
       			m.obj = s;
       			myHandler.sendMessage(m);
       		    System.out.println("----"+path + " MOVED_TO");
-      		    sendToAll(path);
+      		  if(Isrecived==false)  //接收的的文件不再发送
+           	  {
+           		if(!SendFilequeue.contains(path))
+           		{
+           			synchronized(SendFilequeue)
+         			{
+           			SendFilequeue.add(path);
+         			}
+           		    listenqueue.onresume();
+           		}	
+           	   }
               	break;
            case FileObserver.DELETE:
         		s = "----"+path + " DELETE";
@@ -321,6 +398,7 @@ public class FileSharing extends Activity
       			myHandler.sendMessage(m);
       		    System.out.println("----"+path + " DELETE");
       		    recvFiles.remove(path);  //从接收文件列表删除
+      		    System.out.println("发送文件列表的大小："+sendFiles.size());
       		  if(sendFiles.size()>0)
       		  {
       		   Iterator it = sendFiles.keySet().iterator();
@@ -332,6 +410,7 @@ public class FileSharing extends Activity
      	        {
      			  sendFiles.remove(key);  
      			  nextseq.remove(key);     //对应文件的下一个子包序号列表也要删除
+     			  break;
      		    }
      		   }
       		  }
@@ -340,7 +419,157 @@ public class FileSharing extends Activity
            }
        }
     }
-
+  public class listenQueue extends Thread
+  {
+	  boolean running=true;
+	  boolean starting=false;
+	  ArrayList<SmallFile>smallfiles=new ArrayList<SmallFile>();
+	  int total_length=0;
+	public void run()
+	{
+	 while (running)
+	 {
+	  while(starting)
+	  {	
+			try {
+				sleep(1000);  //计时1秒之后再执行该线程。
+			} catch (InterruptedException e) 
+			{
+				e.printStackTrace();
+			}
+	   synchronized(SendFilequeue)
+	   {
+		  if(SendFilequeue.size()!=0) 
+		  {
+			String filename=SendFilequeue.peek();
+			System.out.println("队列的大小："+SendFilequeue.size());
+		    while(filename!=null)
+			{
+			  String id=Integer.toString(sendFileID);
+   			  String file=sharedPath+"//"+filename;
+   			  int filelength=0;
+   			  FileInputStream fis=null;
+   				try {
+   					fis = new FileInputStream(file);
+   					filelength = fis.available();
+   				} catch (Exception e) {
+   					e.printStackTrace();
+   				}
+   			  if(filelength>=maxfilelength)  
+   				{ 
+   				SimpleDateFormat formatter = new SimpleDateFormat("HH-mm-ss-SSS");
+   			    Date curDate = new Date(System.currentTimeMillis());
+   			    String m = formatter.format(curDate);
+   			    String mm="发送文件 "+ipaddress+"-"+id+"的时间: "+m; 
+   			    messageHandle(mm);
+   			    
+   				 writeLog("###"+filename+",	");
+   		         writeLog(filelength+",	");
+   		         writeLog(System.currentTimeMillis()+",	");
+		         writeLog(m+",	"+"\r\n");
+   					int num=0;
+   					if(filelength%maxfilelength==0)
+   						num=filelength/maxfilelength;
+   					else
+   						num=filelength/maxfilelength+1;
+   					
+   					System.out.println("文件分几次发送："+num);
+   					for(int i=0;i<num;i++)
+   					{
+   			         writeLog(id+"--"+i+",	");
+   			         long start=System.currentTimeMillis();
+   					  String sub_id =ipaddress+"-"+id+"--"+i;
+   					  sending_subfileid=sub_id;  //记录正在发送的文件块号
+   					  sendToAll(filename,filelength, sub_id,num);
+   					  synchronized(this)
+   					   {
+   					    try {
+						wait(); //线程阻塞
+					     } catch (InterruptedException e)
+					     {	
+					     System.out.println(e);
+						  e.printStackTrace();
+					     }
+   					   }
+   				long end=System.currentTimeMillis();
+   				writeLog("b-"+(end-start)+"ms,	"+"\r\n");
+   					} 
+   		        }	
+   			else	//多个小文件凑成一个大文件
+   			{
+   				if(SendFilequeue.size()==1)
+   				{
+   					if(smallfiles.size()==0)
+   					{
+   					SimpleDateFormat formatter = new SimpleDateFormat("HH-mm-ss-SSS");
+   				    Date curDate = new Date(System.currentTimeMillis());
+   				    String m = formatter.format(curDate);
+   				    String mm="发送文件 "+ipaddress+"-"+id+"的时间: "+m; 
+   				    messageHandle(mm);
+   				    
+   				 writeLog("###"+filename+",	");
+   		         writeLog(filelength+",	");
+   		         writeLog(System.currentTimeMillis()+",	");
+		         writeLog(m+",	"+"\r\n");
+   						String sub_id =ipaddress+"-"+id+"--"+0;
+   						sendToAll(filename,filelength, sub_id,1);
+   					    synchronized(this)
+ 				        {
+ 				         try {
+ 					      wait(); //线程阻塞
+ 				           } catch (InterruptedException e)
+ 				          {	
+ 				           System.out.println(e);
+ 					       e.printStackTrace();
+ 				           }
+ 				        }
+   				    }
+   					else
+   					{
+   					    String sub_id =ipaddress+"-"+id+"--"+0;
+   	   				    SmallFile sf=new SmallFile(filename,filelength,sub_id);
+   	   					smallfiles.add(sf);
+   	   				    total_length=total_length+filelength;
+   	   				    sendSmallFiles(smallfiles ,total_length);
+   	   				    smallfiles.clear();
+   					}
+   				}
+   				else
+   				{
+   				    String sub_id =ipaddress+"-"+id+"--"+0;
+   					SmallFile sf=new SmallFile(filename,filelength,sub_id);
+   					smallfiles.add(sf);	
+   					total_length=total_length+filelength;
+   				}
+   			}
+   			SendFilequeue.remove();
+   			sendFileID++;  
+   		    filename=SendFilequeue.peek();
+	       }  //内层while循环结束
+		    
+		    if(smallfiles.size()>0)
+		    {
+		    sendSmallFiles(smallfiles,total_length);
+	   		smallfiles.clear();
+		    }
+		 }		
+	    } //end synchronized queue
+	 }
+	}//外层while循环结束
+   }
+	public synchronized void notifyThread()
+	{
+		notify();
+	}
+	public synchronized void onresume()
+	{
+		starting=true;
+	}
+	public synchronized void ondestroy()
+	{
+		running=false;
+	}
+  }
     public class stopClickListener implements OnClickListener 
     {
 		public void onClick(View v) 
@@ -348,88 +577,173 @@ public class FileSharing extends Activity
 			onDestroy();	
 		}
     }
-    public void sendToAll (String filename)
+    public void sendSmallFiles (ArrayList<SmallFile> sfiles,int total_length)
     {
-    	SimpleDateFormat formatter = new SimpleDateFormat("yyyyMMdd-HH-mm-ss-SSS");
-    	Date curDate = new Date(System.currentTimeMillis());
-    	String m = formatter.format(curDate);
-    	String mm="发送文件的时间: "+m;
-		messageHandle(mm);
+    	  int number=0;
+    	  if(total_length % maxfilelength == 0)
+    		  number = total_length/maxfilelength;
+    	  else
+				number= total_length/maxfilelength+1;
+    	  Packet[][] plist =new Packet[number][maxfilelength/blocklength];
+    	  System.out.println("number== "+number);   
+    	int n=0;
+    	int srtartblock=0;
+    	int from=0;
+    	int to=0;	
+    	String []aa=null;
+    	for(int ii=0;ii<sfiles.size();ii++)
+    	{
+    	aa=sfiles.get(ii).sub_fileid.split("--");
+    	   SimpleDateFormat formatter = new SimpleDateFormat("HH-mm-ss-SSS");
+		    Date curDate = new Date(System.currentTimeMillis());
+		    String m = formatter.format(curDate);
+		    String mm="发送文件 "+aa[0]+"的时间: "+m; 
+		    messageHandle(mm);
+		    
+    		 writeLog("###"+sfiles.get(ii).filename+",	");
+		     writeLog(sfiles.get(ii).filelength+",	");
+		     writeLog(System.currentTimeMillis()+",	");
+	         writeLog(m+",	"+"\r\n");
+    	sending_subfileid=sfiles.get(ii).sub_fileid;
+     	FileInputStream fis=null;
+     	BufferedInputStream in=null;
+		int sub_no=Integer.parseInt(aa[1]);
+		if(!sendFiles.containsKey(aa[0]))
+			sendFiles.put(aa[0],sfiles.get(ii).filename);
+     	String file=sharedPath+"//"+sfiles.get(ii).filename;
+     	int data_blocks;
+	    int coding_blocks=0;
+	  
+	    int lastlength= blocklength;
+     	byte[] data = new byte[maxfilelength];
+		try {
+			fis = new FileInputStream(file);
+			in = new BufferedInputStream(fis);
+ 			in.skip(maxfilelength*sub_no);
+ 			in.read(data,0,maxfilelength);
+ 			in.close();
+		    }
+			catch (IOException e) 
+			{
+			e.printStackTrace();
+			}	
+	 			if(sfiles.get(ii).filelength % blocklength == 0)
+	 			{
+	 				data_blocks = sfiles.get(ii).filelength/blocklength;
+	 			}
+	 			else
+	 			{
+	 				data_blocks = sfiles.get(ii).filelength/blocklength+1;
+	 				lastlength= sfiles.get(ii).filelength%blocklength;
+	 			}
+	        	System.out.println("该文件的data_blocks  "+data_blocks);   
+	 			if(srtartblock==0)
+	 			{
+	 				srtartblock=data_blocks;	
+	 				from=0;
+	 				to=data_blocks;
+	 			}
+	 			else
+	 			{
+	 				from =srtartblock;
+	 				to=from+data_blocks;
+	 				srtartblock=to;
+	 				if(to>=100)
+	 				{
+	 					srtartblock=to-100;
+	 					to=100;
+	 				}
+	 			 }
+	 				for(int k=from;k<to;k++)
+		 			{
+		 				byte[] filedata = new byte[blocklength];
+		 				System.arraycopy(data, (k-from)*blocklength, filedata, 0, blocklength);		
+		 				int send_blockLength=0;
+		 				if(k==data_blocks-1)	
+		 					send_blockLength=lastlength;	   
+		 				else
+		 					send_blockLength=blocklength;
+		 			    Packet p = new  Packet(0,sfiles.get(ii).filelength,coding_blocks, data_blocks, (k-from), send_blockLength,sfiles.get(ii).filelength);		
+		 				p.data = filedata ;
+		 				p.filename=sfiles.get(ii).filename;
+		 				p.totalsubFiles=1;
+		 				plist[n][k] = p;
+		 		        p.sub_fileID=sfiles.get(ii).sub_fileid;	 
+		 			}
+		           synchronized(nextseq)
+		           {
+		 			nextseq.put(sfiles.get(ii).sub_fileid, data_blocks); //下一次从plist[0]开始发，其中只放的是冗余包。
+		           }	
+	 			  if(to==100)
+	 			  {
+	 				   sendThread st=new sendThread(plist[n],bcastaddress,port,0,100,1);
+	 				   st.start();
+	 				   n++;
+	 				System.out.println("已经够100块开始发送");
+	 				for(int j=0;j<srtartblock;j++)
+	 				{	
+	 					byte[] filedata = new byte[blocklength];
+		 				System.arraycopy(data, (j+100-from)*blocklength, filedata, 0, blocklength);		
+		 				int send_blockLength=0;
+		 				if((100-from+j)==data_blocks-1)	
+		 					send_blockLength=lastlength;	   
+		 				else
+		 					send_blockLength=blocklength;
+		 			    Packet p = new  Packet(0,sfiles.get(ii).filelength,coding_blocks, data_blocks, (100-from+j), send_blockLength,sfiles.get(ii).filelength);		
+		 				p.data = filedata ;
+		 				p.filename=sfiles.get(ii).filename;
+		 				p.totalsubFiles=1;
+		 				plist[n][j] = p;
+		 		        p.sub_fileID=sfiles.get(ii).sub_fileid;	
+		 			
+	 				}
+	 			}
+    	}	//for循环结束 	
+    	if(plist[0]!=null)
+    	{
+    	    sendThread st=new sendThread(plist[n],bcastaddress,port,0,srtartblock,1);
+		    st.start();
+    	}
+    }
+    public void sendToAll (String filename,int filelength,String sub_fileid,int num)
+    {
      	Packet[] sendPacket=null; 
      	FileInputStream fis=null;
      	BufferedInputStream in=null;
-     	int filelength=0;
+     	String []aa=null;
+		aa=sub_fileid.split("--");
+		int sub_no=Integer.parseInt(aa[1]);
      	String file=sharedPath+"//"+filename;
+     	byte[] data = new byte[maxfilelength];
+		int length=0;
 		try {
 			fis = new FileInputStream(file);
-			filelength = fis.available();
 			in = new BufferedInputStream(fis);
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
-		if(filelength>maxfilelength)  
-		{ 
-			int num=0;
-			if(filelength%maxfilelength==0)
-				num=filelength/maxfilelength;
-			else
-				num=filelength/maxfilelength+1;
-			
-			System.out.println("文件分几次发送："+num);
-			for(int i=0;i<num;i++)
+ 			in.skip(maxfilelength*sub_no);
+ 			length=in.read(data,0,maxfilelength);
+		    }
+			catch (IOException e) 
 			{
-				byte[] data = new byte[maxfilelength];
-				int length=0;
- 				try {
- 				   length=in.read(data,0,maxfilelength);
-				} catch (IOException e) 
-				{
-					e.printStackTrace();
-				}
- 				//调用编码函数，发送函数
- 				String id=Integer.toString(sendFileID);
- 				String sub_id =ipaddress+"-"+id+"--"+i;
- 				String []aa=null;
- 				sendPacket=file_blocks(data,length,sub_id,filename,num,filelength);
- 				if(sendPacket!=null)
- 		        {
- 			    aa=sendPacket[0].sub_fileID.split("--"); //aa[0]中放的是fileid
- 		        sThread=new sendThread(sendPacket,bcastaddress,port,0,sendPacket[0].data_blocks);
+			e.printStackTrace();
+			}	
+ 			sendPacket=file_blocks(data,length,sub_fileid,filename,num,filelength);
+ 			if(sendPacket!=null)
+ 		     {
+ 		        sThread=new sendThread(sendPacket,bcastaddress,port,0,sendPacket[0].data_blocks,0);
  		        sThread.start();    
  		        message = "发送的包的个数: "+sendPacket[0].data_blocks;
  				messageHandle(message);
- 		        }	
+ 		     }	
  			if(!sendFiles.containsKey(aa[0]))
  				sendFiles.put(aa[0],sendPacket[0].filename);
-			}
-		   sendFileID++;
-		}
-		else if(filelength>0)
-		{
-			byte[] data = new byte[maxfilelength];
-			int length=0;
-		    try {
-				length=in.read(data,0,maxfilelength);
-			} catch (IOException e) 
-			{
-				e.printStackTrace();
-			}	
-		    //调用编码函数，发送函数
-		    String id=Integer.toString(sendFileID);
-		    String sub_id =ipaddress+"-"+id+"--"+0;
-		    sendPacket=file_blocks(data,length,sub_id,filename,1,filelength);
-		    if(sendPacket!=null)
-	        {
-	        sThread=new sendThread(sendPacket,bcastaddress,port,0,sendPacket[0].data_blocks);
-	        sThread.start();    
-	        message = "发送的包的个数: "+sendPacket[0].data_blocks;
-			messageHandle(message);
-		    String []aa=sendPacket[0].sub_fileID.split("--"); //aa[0]中放的是fileid
-			if(!sendFiles.containsKey(aa[0]))
-				sendFiles.put(aa[0],sendPacket[0].filename);
-	        }
-			sendFileID++;
-		} 		
+ 			synchronized(subfiles)
+ 			{
+ 			    subfiletask=new sub_fileTask (filename,sub_fileid,num);
+ 			    subfiletimer=new Timer(true);
+ 			    subfiletimer.schedule(subfiletask, subtime, subtime);
+ 			    subfiles.put(sub_fileid,subfiletimer);
+ 			}
+		
     }
     public  Packet[] file_blocks(byte[] filedata,int subFileLength,String sub_fileID,String filename,int totalsubFiles,int FileLength)
     {
@@ -473,6 +787,7 @@ public class FileSharing extends Activity
     
     public synchronized Packet[] encode(byte[] filedata,int subFileLength,String sub_fileID,String filename,int totalsubFiles,int FileLength)
     {   
+    	long start=System.currentTimeMillis();
          int data_blocks;
          int coding_blocks;
          Packet[] plist =null;
@@ -526,6 +841,8 @@ public class FileSharing extends Activity
  			  }	       	
  	      message = plist[0].sub_fileID+" 编码生成冗余包的个数："+plist.length;
  	      messageHandle(message);
+ 	      long end =System.currentTimeMillis();
+ 	      total_encode_timer=total_encode_timer+end-start;
 			return plist;
 	}
 
@@ -625,6 +942,17 @@ public class FileSharing extends Activity
 		   {		
 			e.printStackTrace();
 		   }
+    	 String []aa=plist[0].sub_fileID.split("--");
+    	 SimpleDateFormat formatter = new SimpleDateFormat("HH-mm-ss-SSS");
+		 Date curDate = new Date(System.currentTimeMillis());
+		 String m = formatter.format(curDate);
+		 String mm="发送文件 "+aa[0]+"的时间: "+m; 
+		    messageHandle(mm);
+		 writeLog(""+"\r\n");
+    	 writeLog("%%%"+plist[0].filename+",");
+	     writeLog(plist[0].fileLength+",	");
+	     writeLog(System.currentTimeMillis()+",	");
+         writeLog(m+",	"+"\r\n");
     	}
     	else
     	{
@@ -632,10 +960,12 @@ public class FileSharing extends Activity
     	Timer subfiletimer=null;
     	String []aa=plist[0].sub_fileID.split("--"); //aa[0]中放的是fileid
     	int sub_no=Integer.parseInt(aa[1]);
-    	RecvSubfileData rsfd=new RecvSubfileData(aa[0],plist[0].filename,writein,sub_no);
-    	RecvSubFiles.add(rsfd);
+    	
     	if(subFile_nums.containsKey(aa[0]))
     	{
+
+			RecvSubfileData rsfd=new RecvSubfileData(aa[0],plist[0].filename,writein,sub_no);
+	    	RecvSubFiles.add(rsfd);
     		int t=subFile_nums.get(aa[0]);
     		t=t+1;
 			subFile_nums.remove(aa[0]);
@@ -648,7 +978,7 @@ public class FileSharing extends Activity
             subfileTask=new SubFileTask(aa[0],recv_subfiels_no.get(aa[0]));
     		subfiletimer = new Timer(true);
     		subfileTimers.put(aa[0], subfiletimer);
-    		subfiletimer.schedule(subfileTask,10000,10000);
+    		subfiletimer.schedule(subfileTask,block_time,block_time);
             
            
             if(subFile_nums.get(aa[0])==plist[0].totalsubFiles)
@@ -661,23 +991,22 @@ public class FileSharing extends Activity
    	    	     messageHandle(message);
    	    	     recvFiles.add(recvFilename);  //放入接收文件列表中
                  String encodeFile=sharedPath+"//"+recvFilename;
-                 RandomAccessFile raf=null;
-				try {
+                 RandomAccessFile raf=null;	
+                   try {
 					raf = new RandomAccessFile(encodeFile,"rw");
 					raf.setLength(plist[0].fileLength);
-				} catch (Exception e) 
-				{
+				} catch (Exception e) {
 					e.printStackTrace();
-				}  
-					
+				}
+    						
                  for(int nn=0;nn<RecvSubFiles.size();nn++)
     			 {        	
     				if(RecvSubFiles.get(nn).fileID.equals(aa[0]))
     				{
-    				 try {
+    				 try {  
     			    	    raf.seek(0);   // 1：绝对定位              
     			    	    raf.skipBytes(maxfilelength*RecvSubFiles.get(nn).sub_num);//如果为负值，不跳过任何字节
-    			    	    raf.write(RecvSubFiles.get(nn).data);	        
+    			    	    raf.write(RecvSubFiles.get(nn).data);	
     						} catch (Exception e1) 
     						{
     							e1.printStackTrace();
@@ -687,31 +1016,105 @@ public class FileSharing extends Activity
     				}
     			 }	
                  try {
-					raf.close();
-				} catch (IOException e) 
-				{
-					e.printStackTrace();
-				}  
+ 					raf.close();
+ 				} catch (IOException e) 
+ 				{
+ 					e.printStackTrace();
+ 				}  
     		 subFile_nums.remove(aa[0]);
-    		SimpleDateFormat formatter = new SimpleDateFormat("yyyyMMdd-HH-mm-ss-SSS");
+    		SimpleDateFormat formatter = new SimpleDateFormat("HH-mm-ss-SSS");
     	    Date curDate = new Date(System.currentTimeMillis());
     	    String m = formatter.format(curDate);
-    	    String mm="接收文件的时间 : "+m;
+    	    String mm="接收文件"+aa[0]+"的时间 : "+m;
     		messageHandle(mm);
+    		 writeLog(""+"\r\n");
+    		 writeLog("%%%"+plist[0].filename+",");
+		     writeLog(plist[0].fileLength+",	");
+		     writeLog(System.currentTimeMillis()+",	");
+	         writeLog(m+",	"+"\r\n");
     		} 
     		
     	}  
     	else
     	{
-    		subFile_nums.put(aa[0], 1);  
-    		ArrayList<Integer>recvsubfiles=new ArrayList<Integer>();
-    		recvsubfiles.add(sub_no);
-    		recv_subfiels_no.put(aa[0], recvsubfiles);
-    		subfileTask=new SubFileTask(aa[0],recvsubfiles);
-    		subfiletimer = new Timer(true);
-    		subfileTimers.put(aa[0], subfiletimer);
-    		subfiletimer.schedule(subfileTask,10000,10000);
-    		System.out.println("开始计时： "+subfiletimer);
+    		if(plist[0].fileLength>1024*10240)  //文件的长度大于10m,直接写出
+    		{
+    			if(sub_nums.containsKey(aa[0]))
+    			{
+    				int bb=sub_nums.get(aa[0]);
+    				sub_nums.remove(aa[0]);
+    				sub_nums.put(aa[0], bb+1);
+    				subfileTimers.get(aa[0]).cancel();
+    	            subfileTimers.remove(aa[0]);
+    	            recv_subfiels_no.get(aa[0]).add(sub_no);      
+    			}
+    			else
+    			{
+    			  sub_nums.put(aa[0], 1);
+    			  ArrayList<Integer>recvsubfiles=new ArrayList<Integer>();
+     		      recvsubfiles.add(sub_no);
+     		      recv_subfiels_no.put(aa[0], recvsubfiles);
+    			}
+    			if(!recvFiles.contains(recvFilename))
+    			    recvFiles.add(recvFilename);  //放入接收文件列表中
+    		      String encodeFile=sharedPath+"//"+recvFilename;
+                  RandomAccessFile raf=null;
+ 				  try {
+ 					raf = new RandomAccessFile(encodeFile,"rw");
+ 					raf.setLength(plist[0].fileLength);
+ 					raf.seek(0);   // 1：绝对定位              
+			    	raf.skipBytes(maxfilelength*sub_no);//如果为负值，不跳过任何字节
+			        raf.write(writein);
+ 				  } catch (Exception e) 
+ 				 {
+ 					e.printStackTrace();
+ 				 }  
+ 				 if(sub_nums.get(aa[0])>=plist[0].totalsubFiles)
+   			     {
+ 					 System.out.println("接收完毕######## "+aa[0]);
+   				     recv_subfiels_no.remove(aa[0]) ;
+   				     sub_nums.remove(aa[0]);
+  	                 try {
+						raf.close();
+					} catch (IOException e) {
+						e.printStackTrace();
+					}
+  	             SimpleDateFormat formatter = new SimpleDateFormat("HH-mm-ss-SSS");
+  	 		    Date curDate = new Date(System.currentTimeMillis());
+  	 		    String m = formatter.format(curDate);
+  	 		    String mm="接收文件 "+aa[0]+"的时间: "+m;
+  	 		    messageHandle(mm);
+  	 		     writeLog(""+"\r\n");
+  	             writeLog("%%%"+plist[0].filename+",");
+ 		         writeLog(plist[0].fileLength+",	");
+ 		         writeLog(System.currentTimeMillis()+",	");
+		         writeLog(m+",	"+"\r\n");
+   			     }
+   			    else
+   			    {
+   			       subfileTask=new SubFileTask(aa[0],recv_subfiels_no.get(aa[0]));
+ 	    		   subfiletimer = new Timer(true);
+ 	    		   subfileTimers.put(aa[0], subfiletimer);
+ 	    		   subfiletimer.schedule(subfileTask,block_time,block_time);
+ 	    	       System.out.println("开始计时########： "+subfiletimer);
+   			    }
+ 				 
+    		}
+    		else
+    		{
+    			 RecvSubfileData rsfd=new RecvSubfileData(aa[0],plist[0].filename,writein,sub_no);
+    	    	 RecvSubFiles.add(rsfd);
+    		     subFile_nums.put(aa[0], 1);    
+    		     ArrayList<Integer>recvsubfiles=new ArrayList<Integer>();
+    		     recvsubfiles.add(sub_no);
+    		     recv_subfiels_no.put(aa[0], recvsubfiles);
+    		     subfileTask=new SubFileTask(aa[0],recvsubfiles);
+    		     subfiletimer = new Timer(true);
+    		     subfileTimers.put(aa[0], subfiletimer);
+    		     subfiletimer.schedule(subfileTask,block_time,block_time);
+    		     System.out.println("开始计时： "+subfiletimer);
+    		}
+    
     	  }
         
     	}
@@ -721,7 +1124,7 @@ public class FileSharing extends Activity
     public String getIp()
 	{  
     	//Adhoc模式下获取IP
- // /*  
+//  /*  
     	String networkIp = "";  
     	try {  
     	    List<NetworkInterface> interfaces = Collections.list(NetworkInterface.getNetworkInterfaces());  
@@ -789,10 +1192,14 @@ public class SendTask extends java.util.TimerTask
 		 int sub_no=0;
 		 if(feedTimers.containsKey(sub_fileID))
   	     {
-     System.out.println("取消计时器 "+sub_fileID);
+         System.out.println("准备发送数据，取消计时器 "+sub_fileID);
   	    	feedTimers.get(sub_fileID).cancel();  
   	    	feedTimers.remove(sub_fileID);
   	     } 
+		 String []bb=sub_fileID.split("-");
+		 writeLog("*Re-send:"+bb[1]+"--"+bb[bb.length-1]+",	");
+	     long start=System.currentTimeMillis();
+  
 		 int ssize=0;
 	  synchronized(Feedpkts)
        {
@@ -846,8 +1253,8 @@ public class SendTask extends java.util.TimerTask
 				else
 					num=filelength/maxfilelength+1;
 		     }
-		       int length=0;
-	 		   boolean send=true;
+		     int length=0;
+	 		 boolean send=true;
 	 				if(type==2)
 	 				{
 	 					for(int mm=0;mm<num;mm++)
@@ -881,7 +1288,7 @@ public class SendTask extends java.util.TimerTask
 		 	 			  sendPacket=file_blocks(data,length,sub_id,fileName,num,filelength);
 		 	 			   if(sendPacket!=null)
 		 		           {
-		 		            sThread=new sendThread(sendPacket,bcastaddress,port,0,sendPacket[0].data_blocks);
+		 		            sThread=new sendThread(sendPacket,bcastaddress,port,0,sendPacket[0].data_blocks,0);
 		 		            sThread.start();    
 		 		            message = "发送的包的个数: "+sendPacket[0].data_blocks;
 		 				    messageHandle(message);			
@@ -893,6 +1300,7 @@ public class SendTask extends java.util.TimerTask
 	 		{
 	 		byte[] data = new byte[maxfilelength];
 	 	    System.out.println("超时，文件丢失的包数目："+number);
+	 	     writeLog("miss:"+number+"个,	");
 	 		try {
 	 			 in.skip(maxfilelength*sub_no);
 	 			 length=in.read(data,0,maxfilelength);
@@ -903,7 +1311,15 @@ public class SendTask extends java.util.TimerTask
 	 		 message=sub_fileID+" 超时，再发 "+number+" 个包";
              messageHandle(message);
 		     Packet[] sPacket=null; 
-		     sPacket=encode(data,length,sub_fileID,fileName,num,filelength);
+		     if(SavedencodedPkts!=null&&SavedencodedPkts[0].sub_fileID.equals(sub_fileID))
+		     {	 
+		    	 sPacket=SavedencodedPkts;
+		     }
+		     else
+		     {
+		        sPacket=encode(data,length,sub_fileID,fileName,num,filelength);
+		        SavedencodedPkts=sPacket;
+		     }
 		     synchronized(this)
 		     {
 		     int Start=nextseq.get(sub_fileID);
@@ -923,10 +1339,19 @@ public class SendTask extends java.util.TimerTask
 				       nextseq.put(sub_fileID,nextStart);
 				   }
 				System.out.println("下一次开始发送的子包序号： "+nextStart);
-		        sThread=new sendThread(sPacket,bcastaddress,port,Start,number);
-				sThread.start();          
-				message = "发送包的个数"+number;
-	 			messageHandle(message);
+		        sThread=new sendThread(sPacket,bcastaddress,port,Start,number,0);
+				sThread.start();         
+	 			//发送完冗余包后进行计时
+	 			if(sending_subfileid.equals(sub_fileID))
+	 			{
+	 			synchronized(subfiles)
+	 			{
+	 			subfiletask=new sub_fileTask (fileName,sub_fileID,num);
+	 			subfiletimer=new Timer(true);
+	 			subfiletimer.schedule(subfiletask, subtime, subtime);
+	 			subfiles.put(sub_fileID,subfiletimer);
+	 			}
+	 		   }
 		     }
 		    }	
 	 	 } 
@@ -943,6 +1368,8 @@ public class SendTask extends java.util.TimerTask
 	 	  }
 		}  	
        } 
+         long end=System.currentTimeMillis();
+         writeLog("r-"+(end-start)+"ms,	"+"\r\n");
   	  } 
  }
 
@@ -965,6 +1392,36 @@ public class  SubFileTask extends java.util.TimerTask
   	 }
 }
 
+  public class sub_fileTask extends java.util.TimerTask
+  {	
+	public String filename;
+	public String sub_fileid;
+	public int num;
+	sub_fileTask(String filename,String sub_fileid,int num)
+	{
+	this.filename=filename;
+	this.sub_fileid=sub_fileid;
+	this.num=num;
+	}
+	 public void run() 
+  	 { 
+		 synchronized(subfiles)
+		 {
+		   if(subfiles.containsKey(sub_fileid))
+		   {
+			 System.out.println("超时没收到反馈包，唤醒线程");
+			 String message = "超时没收到反馈包，唤醒线程";
+			 messageHandle(message);
+			 subfiles.get(sub_fileid).cancel();
+			 subfiles.remove(sub_fileid);
+			 listenqueue.notifyThread();
+			 
+		   }
+		 }
+	
+  	 }
+  } 
+  
 public class OtherTask extends java.util.TimerTask
 {
 	
@@ -990,6 +1447,8 @@ public class OtherTask extends java.util.TimerTask
 	 mFileObserver.stopWatching(); //停止监听
    if(recvHandler!=null)
      recvHandler.getLooper().quit(); 
+   synchronized(subfileTimers)
+   {
    if( subfileTimers.size()>0)
 	 {
 	  Iterator it =  subfileTimers.keySet().iterator();
@@ -1001,6 +1460,22 @@ public class OtherTask extends java.util.TimerTask
 	   }
 	  subfileTimers.clear();
 	}
+   }
+   synchronized(subfiles)
+   {
+   if(subfiles.size()>0)
+	 {
+	  Iterator it =  subfiles.keySet().iterator();
+	  while (it.hasNext())
+	   {
+	   String key=null;
+	   key=(String)it.next();
+	   subfiles.get(key).cancel();  //防止还有计时器在运行
+	   }
+	  subfiles.clear();
+	}
+   }
+ 
    rThread.destroy();
    othertimer.cancel();
    RecvSubFiles.clear();
@@ -1010,6 +1485,14 @@ public class OtherTask extends java.util.TimerTask
    recvFiles.clear();
    if(sThread!=null)
       sThread.destroy(); 
+   listenqueue.ondestroy();
+   SendFilequeue.clear();
+   writeLog("encode time:"+total_encode_timer+" ms"+"\r\n");
+   try {
+	bw.close();
+} catch (IOException e) {
+	e.printStackTrace();
+}
    super.onDestroy();
  }
 

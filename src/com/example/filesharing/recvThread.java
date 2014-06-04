@@ -95,6 +95,7 @@ public class recvThread extends Thread
 			    System.out.println(e.toString());
 			    e.printStackTrace();
 			  } 
+	//	   System.out.println("接收到子包的id号："+pt.sub_fileID);
 		   if(pt.type==1||pt.type==2)
 		   {
 			   recvPacket=new Packet[1];
@@ -117,8 +118,8 @@ public class recvThread extends Thread
 		    	     recvTimers.remove(pt.sub_fileID);    
 				 }
 					Random random = new Random();
-					long delay=5000+random.nextInt(1000);
-					long frequency=5000+random.nextInt(1000);
+					long delay=1000+random.nextInt(1000);
+					long frequency=1000+1000;
 					
 					recvtask=new recvTask(pt.sub_fileID);
 					recvtimer = new Timer(true);
@@ -175,7 +176,6 @@ public class recvThread extends Thread
 					   if(pktLength==lossFiles.get(offset)[0].data_blocks )
 					   {
 						   System.out.println("接收完毕，总共接收到的包："+pktLength+"个");
-						   System.out.println("lossFiles.get(offset)[0].data_blocks=："+pktLength+"个");
 						   filesID.add(lossFiles.get(offset)[0].sub_fileID);
 						   //取消接收计时器
 						   if(recvTimers.containsKey(lossFiles.get(offset)[0].sub_fileID))
@@ -199,7 +199,7 @@ public class recvThread extends Thread
 			  else
 			  {
 				 message ="该文件已经完全接受，不再需要其他的包";
-				// FileSharing.messageHandle(message);
+				 FileSharing.messageHandle(message);
 			  }
 	
 		    }  
@@ -263,6 +263,8 @@ public class recvThread extends Thread
 		filesID.clear();
 		lossFiles.clear();
 		pktIDs.clear();
+		synchronized(recvTimers)
+		{
 	    if(recvTimers.size()>0)
 		 {
 		  Iterator it = recvTimers.keySet().iterator();
@@ -274,6 +276,7 @@ public class recvThread extends Thread
 		   }
 		  recvTimers.clear();
 		}
-	}	
+	  }	
+	}
 }
 

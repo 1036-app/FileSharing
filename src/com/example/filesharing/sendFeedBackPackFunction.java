@@ -19,6 +19,8 @@ public class sendFeedBackPackFunction
 	public void sendFeedBack()
 	{
 		boolean isSend=true;
+		synchronized(FileSharing.othersFeedpkt)
+		{
 		for(int k=0;k<FileSharing.othersFeedpkt.size();k++)
 		{
 		  boolean istrue=FileSharing.othersFeedpkt.get(k).sub_fileID.equals(id);
@@ -35,7 +37,8 @@ public class sendFeedBackPackFunction
 				  }
 		    }
 		    break;
-		}
+		 }
+	   }
 		if(isSend)
 		{	
 		byte[]messages=null;
@@ -63,7 +66,7 @@ public class sendFeedBackPackFunction
 		 else
 			 mess="***·¢ËÍ¿é·´À¡°ü";
 		FileSharing.messageHandle(mess);
-		sendThread st=new sendThread(p,FileSharing.bcastaddress,FileSharing.port,0,1);
+		sendThread st=new sendThread(p,FileSharing.bcastaddress,FileSharing.port,0,1,0);
 		st.start();	
 		}
 	}
