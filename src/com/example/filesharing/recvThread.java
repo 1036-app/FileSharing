@@ -250,7 +250,7 @@ public class recvThread extends Thread
 			  int lossPkts=total-len ;
 			  ArrayList<Integer>losspkts=new  ArrayList<Integer>();
 			  losspkts.add(lossPkts);
-			  sendFeedBackPackFunction sfb=new sendFeedBackPackFunction(pkt[0].sub_fileID,losspkts,1);
+			  sendFeedBackPack sfb=new sendFeedBackPack(pkt[0].sub_fileID,losspkts,1);
 			  sfb.sendFeedBack();
          } 
 		}

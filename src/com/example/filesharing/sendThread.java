@@ -6,11 +6,6 @@ import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.SocketException;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Random;
-
-import android.R.integer;
 
 public class sendThread extends Thread
 {
@@ -105,7 +100,7 @@ public class sendThread extends Thread
 	    }	
 		 long end=System.currentTimeMillis();
 		 String []bb=plist[0].sub_fileID.split("-");
-		 FileSharing.writeLog("*sending:"+bb[1]+"--"+bb[bb.length-1]+",	"+(end-start)+"ms,	"+"\r\n");
+		 FileSharing.writeLog("sendThread:"+bb[1]+"--"+bb[bb.length-1]+",	"+(end-start)+"ms,	"+"\r\n");
     }
 	
 	public void destroy() 

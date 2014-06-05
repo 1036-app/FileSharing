@@ -4,12 +4,12 @@ import java.io.ByteArrayOutputStream;
 import java.io.ObjectOutputStream;
 import java.util.ArrayList;
 
-public class sendFeedBackPackFunction 
+public class sendFeedBackPack
 {
 	public String id=null;
 	public ArrayList<Integer> nos=null;
 	public int type=0;
-	 sendFeedBackPackFunction(String fileid,ArrayList<Integer> nos,int type)
+	sendFeedBackPack(String fileid,ArrayList<Integer> nos,int type)
 	 {
 		 this.id=fileid;
 		 this.type=type;
