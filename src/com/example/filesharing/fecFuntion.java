@@ -14,9 +14,10 @@ import eu.vandertil.jerasure.jni.ReedSolomon;
 public class fecFuntion 
 {
 	public  String sharedPath="//sdcard//SharedFiles";
+	public int maxStoredLength=1024*10240; //超过10m的文件则接收到文件块直接输出
 	
-	public  synchronized Packet[] encode(byte[] filedata,int subFileLength,String sub_fileID,String filename,int totalsubFiles,int FileLength)
-    {   
+	public  synchronized Packet[] encode(byte[] filedata,int subFileLength,String sub_fileID,String filename,int totalsubFiles,long FileLength)
+    {     
     	 long start=System.currentTimeMillis();
          int data_blocks;
          int coding_blocks;
@@ -31,8 +32,8 @@ public class fecFuntion
 				data_blocks = subFileLength/FileSharing.blocklength+1;
 				lastlength= subFileLength%FileSharing.blocklength;
 			}
- 	
- 			coding_blocks = data_blocks;
+             coding_blocks= (int)Math.ceil(data_blocks*20/100);
+ 			//coding_blocks = data_blocks;
  			plist = new Packet[coding_blocks+data_blocks];
  			byte[][] origindata = new byte[data_blocks][FileSharing.blocklength];
  			byte[][] encodedata = new byte[coding_blocks][FileSharing.blocklength];
@@ -54,7 +55,7 @@ public class fecFuntion
  				plist[i] = p;
  				p.sub_fileID=sub_fileID;
  			}
- 			
+ 		
  	        int w=16; 
  	        int[] matrix = ReedSolomon.reed_sol_vandermonde_coding_matrix(data_blocks, coding_blocks, w);
  	        Jerasure.jerasure_matrix_encode(data_blocks, coding_blocks, w, matrix, origindata , encodedata, FileSharing.blocklength);
@@ -122,7 +123,7 @@ public class fecFuntion
     	     set=set+plist[pp].data_length;
     	    }
     	}
-      else
+      else 
       {
     	int w=16;
     	int j=0;
@@ -171,11 +172,11 @@ public class fecFuntion
 		   {		
 			e.printStackTrace();
 		   }
-    	 String []aa=plist[0].sub_fileID.split("--");
+    	 String []fileID_break=plist[0].sub_fileID.split("--");
     	 SimpleDateFormat formatter = new SimpleDateFormat("HH-mm-ss-SSS");
 		 Date curDate = new Date(System.currentTimeMillis());
 		 String m = formatter.format(curDate);
-		 String mm="发送文件 "+aa[0]+"的时间: "+m; 
+		 String mm="发送文件 "+fileID_break[0]+"的时间: "+m; 
 		 FileSharing.messageHandle(mm);
 		 FileSharing.writeLog(""+"\r\n");
 		 FileSharing.writeLog("%%%"+plist[0].filename+",	");
@@ -183,41 +184,48 @@ public class fecFuntion
 		 FileSharing.writeLog(plist[0].fileLength+",	");
 		 FileSharing.writeLog(System.currentTimeMillis()+",	");
 		 FileSharing.writeLog(m+",	"+"\r\n");
+		 //取消块计时器
+		 synchronized(FileSharing.subfileTimers)
+		 {
+		   if(FileSharing.subfileTimers.containsKey(fileID_break[0]))
+		   {
+		   FileSharing.subfileTimers.get(fileID_break[0]).cancel(); 
+           FileSharing.subfileTimers.remove(fileID_break[0]);
+		   }
+		 }
     	}
     	else
     	{
     		//该文件有多块
     	send_FbpTask subfileTask=null;
     	Timer subfiletimer=null;
-    	String []aa=plist[0].sub_fileID.split("--"); //aa[0]中放的是fileid
-    	int sub_no=Integer.parseInt(aa[1]);
+    	String []fileID_break=plist[0].sub_fileID.split("--"); //fileID_break[0]中放的是fileid
+    	int sub_no=Integer.parseInt(fileID_break[1]);
     	
-    	if(FileSharing.subFile_nums.containsKey(aa[0]))
+    	if(FileSharing.subFile_nums.containsKey(fileID_break[0]))
     	{
             //以前就收到过该文件（<10m）的块
-			RecvSubfileData rsfd=new RecvSubfileData(aa[0],plist[0].filename,writein,sub_no);
+			RecvSubfileData rsfd=new RecvSubfileData(fileID_break[0],plist[0].filename,writein,sub_no);
 			FileSharing.RecvSubFiles.add(rsfd);
-    		int t=FileSharing.subFile_nums.get(aa[0]);
+    		int t=FileSharing.subFile_nums.get(fileID_break[0]);
     		t=t+1;
-    		FileSharing.subFile_nums.remove(aa[0]);
-    		FileSharing.subFile_nums.put(aa[0], t);
+    		FileSharing.subFile_nums.remove(fileID_break[0]);
+    		FileSharing.subFile_nums.put(fileID_break[0], t);
 			System.out.println("收到的块号："+sub_no);
-            System.out.println("该文件总共块数："+plist[0].totalsubFiles+" 当前收到了块："+FileSharing.subFile_nums.get(aa[0]));
-            FileSharing.subfileTimers.get(aa[0]).cancel(); //只要有新的数据块接收到，就取消块丢失计时器,再加新的计时器
-            FileSharing.subfileTimers.remove(aa[0]);
-            FileSharing.recv_subfiels_no.get(aa[0]).add(sub_no);
-            subfileTask=new send_FbpTask(aa[0],FileSharing.recv_subfiels_no.get(aa[0]));
-            subfiletimer = new Timer(true);
-    		FileSharing.subfileTimers.put(aa[0], subfiletimer);
-    		subfiletimer.schedule(subfileTask,FileSharing.block_time,FileSharing.block_time);
-            
+            System.out.println("该文件总共块数："+plist[0].totalsubFiles+" 当前收到了块："+FileSharing.subFile_nums.get(fileID_break[0]));        
+            FileSharing.recv_subfiels_no.get(fileID_break[0]).add(sub_no);
            
-            if(FileSharing.subFile_nums.get(aa[0])==plist[0].totalsubFiles)
+            if(FileSharing.subFile_nums.get(fileID_break[0])==plist[0].totalsubFiles)
     		{
-            	FileSharing.recv_subfiels_no.remove(aa[0]);
-            	FileSharing.subfileTimers.get(aa[0]).cancel();
-            	FileSharing.subfileTimers.remove(aa[0]);
-               
+            	FileSharing.recv_subfiels_no.remove(fileID_break[0]);
+            	 synchronized(FileSharing.subfileTimers)
+        		 {
+            	  if(FileSharing.subfileTimers.containsKey(fileID_break[0]))
+    			   {
+            	    FileSharing.subfileTimers.get(fileID_break[0]).cancel();  //取消块计时器
+            	    FileSharing.subfileTimers.remove(fileID_break[0]);
+    			   }
+        		 }
                  String message="开始生成文件";
                  FileSharing.messageHandle(message);
                  FileSharing.recvFiles.add(recvFilename);  //放入接收文件列表中
@@ -226,13 +234,13 @@ public class fecFuntion
                    try {
 					raf = new RandomAccessFile(encodeFile,"rw");
 					raf.setLength(plist[0].fileLength);
-				} catch (Exception e) {
+				   } catch (Exception e) {
 					e.printStackTrace();
-				}
+				   }
     						
                  for(int nn=0;nn<FileSharing.RecvSubFiles.size();nn++)
     			 {        	
-    				if(FileSharing.RecvSubFiles.get(nn).fileID.equals(aa[0]))
+    				if(FileSharing.RecvSubFiles.get(nn).fileID.equals(fileID_break[0]))
     				{
     				   try {  
     			    	    raf.seek(0);   // 1：绝对定位              
@@ -242,8 +250,8 @@ public class fecFuntion
     						{
     							e1.printStackTrace();
     						}
-    				 FileSharing.RecvSubFiles.remove(nn);
-    				 nn--;
+    				    FileSharing.RecvSubFiles.remove(nn);
+    				     nn--;
     				}
     			 }	
                  try {
@@ -252,11 +260,11 @@ public class fecFuntion
  				{
  					e.printStackTrace();
  				}  
-                FileSharing.subFile_nums.remove(aa[0]);
+                FileSharing.subFile_nums.remove(fileID_break[0]);
     		    SimpleDateFormat formatter = new SimpleDateFormat("HH-mm-ss-SSS");
     	        Date curDate = new Date(System.currentTimeMillis());
     	        String m = formatter.format(curDate);
-    	        String mm="接收文件"+aa[0]+"的时间 : "+m;
+    	        String mm="接收文件"+fileID_break[0]+"的时间 : "+m;
     	        FileSharing.messageHandle(mm);
     	        FileSharing.writeLog(""+"\r\n");
     	        FileSharing.writeLog("%%%"+plist[0].filename+",	");
@@ -270,23 +278,21 @@ public class fecFuntion
     	else
     	{
     		//收到了大于10m的文件或者第一次收到<10m的文件
-    		if(plist[0].fileLength>1024*10240)  //文件的长度大于10m,直接写出
+    		if(plist[0].fileLength>maxStoredLength)  //文件的长度大于10m,直接写出
     		{
-    			if(FileSharing.sub_nums.containsKey(aa[0]))
+    			if(FileSharing.sub_nums.containsKey(fileID_break[0]))
     			{   //以前已经收到过大于10m的文件块
-    				int bb=FileSharing.sub_nums.get(aa[0]);
-    				FileSharing.sub_nums.remove(aa[0]);
-    				FileSharing.sub_nums.put(aa[0], bb+1);
-    				FileSharing.subfileTimers.get(aa[0]).cancel();
-    				FileSharing.subfileTimers.remove(aa[0]);
-    				FileSharing.recv_subfiels_no.get(aa[0]).add(sub_no);      
+    				int bb=FileSharing.sub_nums.get(fileID_break[0]);
+    				FileSharing.sub_nums.remove(fileID_break[0]);
+    				FileSharing.sub_nums.put(fileID_break[0], bb+1);
+    				FileSharing.recv_subfiels_no.get(fileID_break[0]).add(sub_no);      
     			}
     			else
     			{ //第一次收到大于10m的文件块
-    			  FileSharing.sub_nums.put(aa[0], 1); //大于10m文件已经收到的块数
+    			  FileSharing.sub_nums.put(fileID_break[0], 1); //大于10m文件已经收到的块数
     			  ArrayList<Integer>recvsubfiles=new ArrayList<Integer>();
      		      recvsubfiles.add(sub_no);
-     		      FileSharing.recv_subfiels_no.put(aa[0], recvsubfiles);
+     		      FileSharing.recv_subfiels_no.put(fileID_break[0], recvsubfiles);
     			}
     			if(!FileSharing.recvFiles.contains(recvFilename))
     				FileSharing.recvFiles.add(recvFilename);  //放入接收文件列表中
@@ -302,11 +308,16 @@ public class fecFuntion
  				 {
  					e.printStackTrace();
  				 }  
- 				 if(FileSharing.sub_nums.get(aa[0])>=plist[0].totalsubFiles)
+ 				 if(FileSharing.sub_nums.get(fileID_break[0])>=plist[0].totalsubFiles)
    			     {
- 					System.out.println("接收完毕######## "+aa[0]);
- 					FileSharing.recv_subfiels_no.remove(aa[0]) ;
- 					FileSharing.sub_nums.remove(aa[0]);
+ 					System.out.println("接收完毕######## "+fileID_break[0]);
+ 					 if(FileSharing.subfileTimers.containsKey(fileID_break[0]))
+ 					 {
+					  FileSharing.subfileTimers.get(fileID_break[0]).cancel();
+ 	    			  FileSharing.subfileTimers.remove(fileID_break[0]);
+ 					 }
+ 					FileSharing.recv_subfiels_no.remove(fileID_break[0]) ;
+ 					FileSharing.sub_nums.remove(fileID_break[0]);
   	                 try {
 						raf.close();
 					} catch (IOException e) {
@@ -315,7 +326,7 @@ public class fecFuntion
   	               SimpleDateFormat formatter = new SimpleDateFormat("HH-mm-ss-SSS");
   	 		       Date curDate = new Date(System.currentTimeMillis());
   	 		       String m = formatter.format(curDate);
-  	 		       String mm="接收文件 "+aa[0]+"的时间: "+m;
+  	 		       String mm="接收文件 "+fileID_break[0]+"的时间: "+m;
   	 		       FileSharing.messageHandle(mm);
   	 		       FileSharing. writeLog(""+"\r\n");
   	 		       FileSharing.writeLog("%%%"+plist[0].filename+",	");
@@ -323,30 +334,16 @@ public class fecFuntion
   	 		       FileSharing.writeLog(plist[0].fileLength+",	");
   	 		       FileSharing.writeLog(System.currentTimeMillis()+",	");
   	 		       FileSharing.writeLog(m+",	"+"\r\n");
-   			     }
-   			    else
-   			    {   //大于10m的文件块还没有完全接受
-   			       subfileTask=new send_FbpTask(aa[0],FileSharing.recv_subfiels_no.get(aa[0]));
- 	    		   subfiletimer = new Timer(true);
- 	    		   FileSharing.subfileTimers.put(aa[0], subfiletimer);
- 	    		   subfiletimer.schedule(subfileTask,FileSharing.block_time,FileSharing.block_time);
- 	    	       System.out.println("开始计时########： "+subfiletimer);
-   			    }
- 				 
+   			     }			 
     		}
     		else
     		{  //第一次收到小于10m的文件块
-    			 RecvSubfileData rsfd=new RecvSubfileData(aa[0],plist[0].filename,writein,sub_no);
+    			 RecvSubfileData rsfd=new RecvSubfileData(fileID_break[0],plist[0].filename,writein,sub_no);
     			 FileSharing.RecvSubFiles.add(rsfd);
-    			 FileSharing. subFile_nums.put(aa[0], 1);    
+    			 FileSharing. subFile_nums.put(fileID_break[0], 1);    
     		     ArrayList<Integer>recvsubfiles=new ArrayList<Integer>();
     		     recvsubfiles.add(sub_no);
-    		     FileSharing.recv_subfiels_no.put(aa[0], recvsubfiles);
-    		     subfileTask=new send_FbpTask(aa[0],recvsubfiles);
-    		     subfiletimer = new Timer(true);
-    		     FileSharing.subfileTimers.put(aa[0], subfiletimer);
-    		     subfiletimer.schedule(subfileTask,FileSharing.block_time,FileSharing.block_time);
-    		     System.out.println("开始计时： "+subfiletimer);
+    		     FileSharing.recv_subfiels_no.put(fileID_break[0], recvsubfiles);
     		}
     
     	  }

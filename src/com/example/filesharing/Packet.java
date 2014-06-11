@@ -7,16 +7,16 @@ public class Packet implements Serializable
 	String sub_fileID; //文件ID号和文件的块号
 	String filename;
 	int totalsubFiles;
-	int type;  //0为数据，1为反馈包
+	int type=0;  //0为数据，1为反馈包
 	int coding_blocks;
 	int data_blocks;
 	int seqno;
 	int data_length;
 	byte[] data;
 	int subFileLength=0; //文件块的大小
-	int fileLength=0;
+	long fileLength=0;
 	
-	Packet(int type,int subFileLength, int coding_blocks, int data_blocks, int seqno, int data_length,int filelength)
+	Packet(int type,int subFileLength, int coding_blocks, int data_blocks, int seqno, int data_length,long filelength)
 	{
 		this.type = type;
 		this.subFileLength=subFileLength;

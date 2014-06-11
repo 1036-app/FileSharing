@@ -7,7 +7,7 @@ import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.SocketException;
 
-public class sendThread extends Thread
+public class sendThread 
 {
 	public DatagramSocket socket;
 	public DatagramPacket packet;
@@ -18,7 +18,7 @@ public class sendThread extends Thread
 	private int from=0;
 	private int number=0;
 	private int mixfiles=0;
-	sendThread(Packet []plist,String castIP,int port,int from,int number,int mixfiles)
+	public synchronized void inital(Packet []plist,String castIP,int port,int from,int number,int mixfiles)
 	{
 		this.plist=plist;
 		this.castIP=castIP;
@@ -27,7 +27,7 @@ public class sendThread extends Thread
 		this.number=number;
 		this.mixfiles=mixfiles;
 	}
-	public void init()
+	public synchronized  void init()
 	{
 		try {
 			socket = new DatagramSocket();
@@ -39,7 +39,7 @@ public class sendThread extends Thread
 		}
 	}
 	
-	public void sendPacket(Packet pt,String sub_fileID,int i)
+	public synchronized void sendPacket(Packet pt,String sub_fileID,int i)
 	{
 		
 		byte[] messages=null;
@@ -52,7 +52,7 @@ public class sendThread extends Thread
 	         oos.close(); 
 	         packet = new DatagramPacket(messages, messages.length,addr, port);        
 	         socket.send(packet);
-	         System.out.println("·¢ËÍING "+sub_fileID+"---packet:"+i);
+	       //  System.out.println("·¢ËÍING "+sub_fileID+"---packet:"+i);
 	        }  
 		    catch (SocketException e) 
 	        {
@@ -62,12 +62,10 @@ public class sendThread extends Thread
 	        {   
 	            e.printStackTrace();  
 	        } 
-	
+		 FileSharing.total_sending_length+=messages.length;
 	}
-	
-	
-	@Override
-	public void run() 
+		
+    public synchronized void sending() 
 	{ 
 		long start=System.currentTimeMillis();
 		 init();
@@ -99,13 +97,15 @@ public class sendThread extends Thread
 			}
 	    }	
 		 long end=System.currentTimeMillis();
+		 FileSharing.total_sending_timer+=(end-start);
 		 String []bb=plist[0].sub_fileID.split("-");
 		 FileSharing.writeLog("sendThread:"+bb[1]+"--"+bb[bb.length-1]+",	"+(end-start)+"ms,	"+"\r\n");
     }
-	
+
 	public void destroy() 
 	{	
-		socket.close();
+		if(socket!=null)
+		  socket.close();
 	
 	}
 

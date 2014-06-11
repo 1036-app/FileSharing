@@ -43,6 +43,7 @@ public class sendFeedBackPack
 		{	
 		byte[]messages=null;
 		Packet FBK=new Packet(1,0,0,1,0,0,0);
+	
 	    FeedBackData FeedBack=new FeedBackData(id,nos,type);
 		 try {  
 	         ByteArrayOutputStream baos = new ByteArrayOutputStream();  
@@ -64,10 +65,10 @@ public class sendFeedBackPack
 		 if(type==1)	 
 		     mess ="***发送单个包的反馈包";
 		 else
-			 mess="***发送块反馈包";
+			 mess="^^^^发送块反馈包";
 		FileSharing.messageHandle(mess);
-		sendThread st=new sendThread(p,FileSharing.bcastaddress,FileSharing.port,0,1,0);
-		st.start();	
+		FileSharing.sThread.inital(p,FileSharing.bcastaddress,FileSharing.port,0,1,0);
+		FileSharing.sThread.sending(); 
 		}
 	}
 	

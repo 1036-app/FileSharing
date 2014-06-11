@@ -1,10 +1,8 @@
 package com.example.filesharing;
 
 import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
@@ -41,6 +39,7 @@ public class recvThread extends Thread
 	public String recvIP=null;
 	public String mess=null;
 	public String message=null;
+	public final int fund_time=500; //决定多长时间没收到数据包就发送反馈包
 	recvThread(String localIP,int port)
 	{
 		this.localIP="/"+localIP;
@@ -112,19 +111,36 @@ public class recvThread extends Thread
 			  {
 				 int offset=0;  //该文件放在列表中的第offset个表项
 				 int pktLength=0; //接受的包放在了第pktLength个包
+				 String[] fileID_break=pt.sub_fileID.split("--");
 				 if(recvTimers.containsKey(pt.sub_fileID))
 				 {
 					 recvTimers.get(pt.sub_fileID).cancel();
 		    	     recvTimers.remove(pt.sub_fileID);    
 				 }
+				 synchronized(FileSharing.subfileTimers)
+				 {
+				   if(FileSharing.subfileTimers.containsKey(fileID_break[0]))
+				    {
+		             FileSharing.subfileTimers.get(fileID_break[0]).cancel();
+		             FileSharing.subfileTimers.remove(fileID_break[0]);
+				    }
+				 }
 					Random random = new Random();
-					long delay=1000+random.nextInt(1000);
-					long frequency=1000+1000;
-					
+					long delay=fund_time+random.nextInt(fund_time);
+					long frequency=fund_time+fund_time;
+					//添加包计时器
 					recvtask=new recvTask(pt.sub_fileID);
 					recvtimer = new Timer(true);
 					recvTimers.put(pt.sub_fileID, recvtimer);
 					recvtimer.schedule(recvtask,delay,frequency);
+					//添加块计时器
+					 synchronized(FileSharing.subfileTimers)
+					 {
+					  send_FbpTask send_Fbptask =new send_FbpTask(fileID_break[0],pt.totalsubFiles);
+		              Timer subfiletimer = new Timer(true);
+		    		  FileSharing.subfileTimers.put(fileID_break[0], subfiletimer);
+		    		  subfiletimer.schedule(send_Fbptask,FileSharing.block_time,FileSharing.block_time);
+					 }
 					   for(offset=0;offset<lossFiles.size();offset++) 
 					    {
 					        if(pt.sub_fileID.equals(lossFiles.get(offset)[0].sub_fileID))
@@ -175,7 +191,7 @@ public class recvThread extends Thread
 					   
 					   if(pktLength==lossFiles.get(offset)[0].data_blocks )
 					   {
-						   System.out.println("接收完毕，总共接收到的包："+pktLength+"个");
+						   System.out.println("接收完毕，"+pt.sub_fileID+",总共接收到的包："+pktLength+"个");
 						   filesID.add(lossFiles.get(offset)[0].sub_fileID);
 						   //取消接收计时器
 						   if(recvTimers.containsKey(lossFiles.get(offset)[0].sub_fileID))
@@ -247,6 +263,15 @@ public class recvThread extends Thread
      		  FileSharing.messageHandle(mess);
      		  System.out.println("超时，收到文件： "+sub_fileID+",包："+len+" 个 。");
      		  System.out.println("发送反馈包");
+     		  String[] fileID_break=sub_fileID.split("--");
+     		 synchronized(FileSharing.subfileTimers)
+    		 {
+     		   if(FileSharing.subfileTimers.containsKey(fileID_break[0]))
+			    {
+	             FileSharing.subfileTimers.get(fileID_break[0]).cancel();
+	             FileSharing.subfileTimers.remove(fileID_break[0]);
+			    }
+    		 }  
 			  int lossPkts=total-len ;
 			  ArrayList<Integer>losspkts=new  ArrayList<Integer>();
 			  losspkts.add(lossPkts);
