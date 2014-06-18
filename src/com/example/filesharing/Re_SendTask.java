@@ -22,7 +22,6 @@ public class Re_SendTask extends java.util.TimerTask
   	 { 
 		 int i=0;
 		 int number=0;
-		 String sharedPath="//sdcard//SharedFiles";
 		 ArrayList<Integer> nos=null;
 		 String []fileID_break=null;
 		 String fileid=null;
@@ -69,7 +68,7 @@ public class Re_SendTask extends java.util.TimerTask
      	     long filelength=0;
      	     int num=0;
 		     fileName=FileSharing.sendFiles.get(fileid);
-		     String file=sharedPath+"//"+fileName;
+		     String file=fileName;
 		     File ff=new File(file);
 		     RandomAccessFile raf=null;	
              try {
@@ -121,6 +120,9 @@ public class Re_SendTask extends java.util.TimerTask
 		       {
 		    	   FileInputStream fis=null;
 		     	    BufferedInputStream in=null;
+		     	   File f=new File(file);
+					if(f.exists())
+					{
 			 	      try {
 					fis = new FileInputStream(file);
 					filelength = fis.available();
@@ -131,8 +133,9 @@ public class Re_SendTask extends java.util.TimerTask
 				    {
 					e.printStackTrace();
 				    }
+					}
 		    	 sPacket=FileSharing.fecfunction.encode(data,length,sub_fileID,fileName,num,filelength);
-		    	 System.out.println("！！！！！重新发送要自己编码");
+		    	 System.out.println("????重新发送要自己编码");
 		    	 FileSharing.writeLog("重新发送要自己编码"+sub_fileID+"\r\n");
 		    	 if(FileSharing.encodedPacket.size()==FileSharing.stored_blocks)
 		    	      FileSharing.encodedPacket.remove(0);

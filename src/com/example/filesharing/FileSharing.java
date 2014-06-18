@@ -37,6 +37,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Queue;
+import java.util.Stack;
 import java.util.Timer;
 import android.app.Activity;
 import android.app.ActivityManager;
@@ -65,7 +66,7 @@ public class FileSharing extends Activity
 	public static final int blocklength=1024;      //每块的大小1k
 	public static final int maxfilelength=102400;    //文件块大小限制为100k
 	public static int sendFileID=0;  //文件的id号
-	public static String sharedPath="//sdcard//SharedFiles";
+	public static String sharedPath="/sdcard/SharedFiles";
 	
 	public static Handler myHandler=null;
     public static Handler recvHandler= null;
@@ -80,13 +81,14 @@ public class FileSharing extends Activity
 	public static long total_encode_timer=0;  //编码总共花费的时间
 	public static long total_sending_timer=0; //发送总共花费的时间
 	public static long total_sending_length=0; 
-	public static int stored_blocks=10;  //存储编好码的块
+	public static int stored_blocks=20;  //存储编好码的块
 	public String message=null;
     public OtherTask othertask=null;
     public Timer othertimer=null;
     public int otherPcks_time=2000; //别人反馈包的过期时间 ms
-    public int selfFeedPcks_time=1000; //收到自己反馈包的过期时间 ms
-   
+    public int selfFeedPcks_time=1000; //收到对自己反馈包的过期时间 ms
+	public static int sleeptime=3000;  //计时3秒之后在开始监控队列。
+	
     public static HashMap<String,String>sendFiles=new HashMap<String,String>(); //发送文件列表
     public static ArrayList<String>recvFiles=new ArrayList<String>();        //接收文件列表
     public static Map<String,Integer>nextseq=new HashMap<String,Integer>(); //next packetID
@@ -103,10 +105,12 @@ public class FileSharing extends Activity
 	public static Map<String,Timer> subfileTimers=new HashMap<String,Timer>();  //每当收到一个文件块就会计时
 	public static final int block_time=4000;  //文件发送块反馈包的时间
 	public static long currentLength=0;  //当前文件列表中文件的长度
-	public long   maxQueueLength=1024*10240; //队列的最大容量
-	public static boolean ishandle=true;  //是否需要listenQueue线程来处理队列
+	public long  maxQueueLength=1024*10240; //队列的最大容量
+	public static int file_number=0;
+	public int maxNumber=20;  //队列容许的最大文件数
 	public static fecFuntion fecfunction=new fecFuntion(); //程序中值实现一个fecFuntion实例，且用了synchronized发送，避免内存溢出
 	public static ArrayList<Packet[]> encodedPacket=new  ArrayList<Packet[]>(); //编码完成的块
+	SDCardFileObserver  fileobver=null;
 	@Override
     public void onCreate(Bundle savedInstanceState)
     {
@@ -133,19 +137,20 @@ public class FileSharing extends Activity
         rThread.start();
         listenqueue=new listenQueue();
         listenqueue.start();
-       
+        
+        
         ActivityManager activityManager = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
         information.append("手机容许线程内存："+activityManager.getMemoryClass()+"M\n");	
   	    SimpleDateFormat formatter = new SimpleDateFormat("HH-mm-ss");
 	    Date curDate = new Date(System.currentTimeMillis());
 	    String m = formatter.format(curDate);
-	    String sPath="//sdcard//Log";
+	    String sPath="//sdcard/Log";
         File SDir=new File(sPath);
         if (!SDir.exists())
         {
         	SDir.mkdirs();
         }
-        String logPath=sPath+"//log-"+m+".txt";
+        String logPath=sPath+"/log-"+m+".txt";
   		File f=new File(logPath);		  
     	 try {
 			bw=new BufferedWriter(new FileWriter(f));
@@ -185,7 +190,7 @@ public class FileSharing extends Activity
         	        if(p.type==0&&recvPacket.length>=p.data_blocks)
         		    {
         		       information.append( "收到的是数据包\n");	
-        		     //  fecfunction.decode(recvPacket);	  //调用解码函数
+        		       fecfunction.decode(recvPacket);	  //调用解码函数
         		    }	
         		    if(p.type==1)
         		    {		
@@ -308,41 +313,89 @@ public class FileSharing extends Activity
           } 
 	   System.out.println("收到反馈包 fb.type="+fb.type);
    }
+   
    public class SDCardFileObserver extends FileObserver //是一个线程
     {
        //mask:指定要监听的事件类型，默认为FileObserver.ALL_EVENTS
-       public SDCardFileObserver(String path, int mask) 
+	   public String directory=null;
+	   List<SingleFileObserver> mObservers=null;
+	   String mPath=null;
+	   int mMask;
+       public SDCardFileObserver(String path,int mask) 
        {
            super(path, mask);
        }
-
        public SDCardFileObserver(String path) 
        {
            super(path);
+           directory=path;  //sdcard//Shared//...
+           mPath=path;
+     System.out.println("当前监听的目录："+directory);
        }
-
-       @Override
-       public void onEvent(int event, String path) 
+       @Override 
+       public void startWatching()
        {
-           final int action = event & FileObserver.ALL_EVENTS;
-           boolean Isrecived=false;
-           if(recvFiles.size()!=0)
-               Isrecived=recvFiles.contains(path);       
+       if (mObservers != null)
+          return ;
+       mObservers = new ArrayList<SingleFileObserver>();
+       Stack <String>  stack= new Stack <String>();
+       stack.push(mPath);
+       while (!stack.isEmpty())
+       {
+          String parent = stack.pop();
+          mObservers.add(new SingleFileObserver(parent));
+          File path = new File(parent);
+          File[]files = path.listFiles();
+          if (null == files)
+           continue;
+         
+          for (File f: files)
+          {
+            if(f.isDirectory() && !f.getName().equals(".") && !f.getName() .equals(".."))
+            {
+            stack.push(f.getPath());
+            }
+         }
+      }
+     for (SingleFileObserver sfo: mObservers)
+     {
+       sfo.startWatching();
+     }
+  }
+    @Override 
+   public void stopWatching()
+   {
+       if (mObservers == null)
+         return ;
+       synchronized(mObservers)
+       {
+       for (SingleFileObserver sfo: mObservers)
+       {
+       sfo.stopWatching();
+       }
+       mObservers.clear();
+       mObservers = null;
+       }
+  }
+       @Override
+       public void onEvent(int event, String path) //此时的path就是绝对路径了
+       {
+           final int action = event & FileObserver.ALL_EVENTS;    
            String s;
            Message m;
            switch (action) 
            {  
            case FileObserver.CREATE:
-          		File f=new File(sharedPath+"//"+path);
+          		File f=new File(path);
           	    if(f.isDirectory())
           	    {
           	        s = "----"+path + " CREATE";
                		m = new Message();
                		m.obj = s;
                		myHandler.sendMessage(m);
-        	        System.out.println("----"+path+" CREATE:");
-        	        handleDirectory(Isrecived,path);
-          	   }
+        	        System.out.println("----"+path+" CREATE:"); 
+        	        handleDirectory(path);
+          	   }    
    			break;
            case FileObserver.MODIFY:  //文件内容被修改时触发，如粘贴文件等
         	   break;
@@ -352,7 +405,7 @@ public class FileSharing extends Activity
        		   m.obj = s;
        		   myHandler.sendMessage(m);
        	       System.out.println("----"+path + " CLOSE_WRITE");
-        	   addToQueue(Isrecived, path);
+        	   addToQueue(path);
         	   break;
            case FileObserver.MOVED_TO:
               	s = "----"+path + " MOVED_TO";
@@ -360,7 +413,8 @@ public class FileSharing extends Activity
       			m.obj = s;
       			myHandler.sendMessage(m);
       		    System.out.println("----"+path + " MOVED_TO");
-      		    addToQueue(Isrecived, path);
+      		  if(recvFiles.size()!=0) 
+      		    addToQueue(path);
               	break;
            case FileObserver.DELETE:
         		s = "----"+path + " DELETE";
@@ -368,80 +422,164 @@ public class FileSharing extends Activity
       			m.obj = s;
       			myHandler.sendMessage(m);
       		    System.out.println("----"+path + " DELETE");
+      		    File file=new File(path);
+        	    if(mObservers != null)
+        	    {
+        	    	synchronized(mObservers)
+        	    	{
+        	    	for(int i=0;i<mObservers.size();i++)
+        	    	{
+        	    		if(mObservers.get(i).mPath.equals(path))
+        	    		{
+        	    			System.out.println("停止监听该目录");
+        	    			mObservers.get(i).stopWatching();
+        	    			mObservers.remove(i);	
+       	    			    break;
+        	    		}
+       
+        	    	}
+        	      }
+        	    }
+      		    synchronized(recvFiles)
+      		    {
       		    recvFiles.remove(path);  //从接收文件列表删除
+      		    }
       		    System.out.println("发送文件列表的大小："+sendFiles.size());
-      		  if(sendFiles.size()>0)
-      		  {
+      		    synchronized(sendFiles)
+      		    {
+      		   if(sendFiles.size()>0)
+      		   {
       		   Iterator it = sendFiles.keySet().iterator();
      		   while (it.hasNext())
      		   {
      		   String key=null;
-     		   key=(String)it.next();
+     		   key=(String)it.next();  //第一次调用Iterator的next()方法时，它返回序列的第一个元素
      	       if(sendFiles.get(key).equals(path)) 
      	        {
-     			  sendFiles.remove(key);  
+     			  sendFiles.remove(key); 
+     			 synchronized(nextseq)
+       		     {
      			  nextseq.remove(key);     //对应文件的下一个子包序号列表也要删除
+       		     }
      			  break;
+     		     }
      		    }
-     		   }
-      		  }
+      		    }
+      		   }
         	   break;
-
            }
        }
-    }
-   public void handleDirectory(boolean Isrecived,String path)
+       
+   public class SingleFileObserver extends FileObserver
    {
-	   if(Isrecived==false)  //接收的的文件不再发送
+       String mPath;
+       String newPath=null;
+       public SingleFileObserver(String path)
+       {
+         this(path, ALL_EVENTS);
+         mPath = path;
+       }
+       public SingleFileObserver(String path, int mask)
+       {
+         super(path, mask);
+         mPath = path;
+       }
+       @Override 
+       public void onEvent(int event, String path)
+       {
+    	 newPath = mPath + "/" + path;
+         SDCardFileObserver.this.onEvent(event, newPath);
+       }
+       @Override 
+       public void stopWatching()
+       {
+    	   System.out.println("stoping watchinging ");
+       }
+    }
+   public synchronized void handleDirectory(String path)
+   {
+	   synchronized(recvFiles)
+		 {
+	   if(!recvFiles.contains(path)) //接收的的文件不再发送
 	  	{
-	     File f=new File(sharedPath+"//"+path);
-	     SDCardFileObserver FileObserver = new SDCardFileObserver(sharedPath+"//"+path);
-	     FileObserver.startWatching(); //开始监听
-	       
-		   System.out.println("f.isDirectory()  CREATE:");   
-		   File[]files= f.listFiles();
-		   System.out.println("length1  "+f.listFiles());  
-		   System.out.println("length2  "+ files.length);  
-		   System.out.println("length3  "+ f.list().length);
-		 //  for(int i=0;i<files.length;i++)
-		   for(File file:files)     
-		   {
-			String name=file.getName();  
-			 System.out.println("name  "+name);   
-		   }
-	  	  }
-   }
- public void addToQueue(boolean Isrecived,String path)
- {
+		 String filepath=path;  //要监听的子目录
+		 System.out.println("开始监听子文件夹"+filepath);   
+		 SingleFileObserver sfb=new SingleFileObserver(filepath);	 
+		 sfb.startWatching();
+		 mObservers.add(sfb);
 	 
-	 if(Isrecived==false)  //接收的的文件不再发送
-  	  {
-	     	if(!SendFilequeue.contains(path)&&!sendFiles.containsKey(path))
-		    {
+	     File f=new File(filepath);
+		 File[] files= f.listFiles();
+		 for(int i=0;i<files.length;i++)
+		 {   
+			 if(files[i].isDirectory())
+			 {
+				 handleDirectory(filepath+"/"+files[i].getName()); 
+			 }
+			 else
+		      addToQueue(filepath+"/"+files[i].getName());
+		 }
+	 }	
+	}  
+   }
+  }
+ public synchronized void addToQueue(String path)
+ {
+	 synchronized(recvFiles)
+	 {
+	   if(!recvFiles.contains(path)&&!SendFilequeue.contains(path))  //接收的的文件不再发送
+  	    {
+	     	   boolean contain=false;
+	     	   Iterator it = sendFiles.keySet().iterator();
+	     	   while(it.hasNext())
+	     	   {
+	     		   String fileid=(String)it.next();
+	     		   if(sendFiles.get(fileid).equals(path))
+	     			 {
+	     			   contain=true;
+	     			   break;
+	     			 }		   
+	     	   }
+	      if(contain==false)
+	     	{
 			synchronized(SendFilequeue)
-			{
-			  SendFilequeue.add(path);
+			{  
+			  String filename=path;  //绝对路径
+			  SendFilequeue.add(filename);
 			  FileInputStream fis;
       	      long filelength=0;
       	 	  try {
-      	 	  fis = new FileInputStream(sharedPath+"//"+path); 
+      	 	  fis = new FileInputStream(filename); 
       	 	  filelength= fis.available();
       	 	  } catch (Exception e) {
       	 	  e.printStackTrace();
       	 	  }
-      	 	  System.out.println("queue-start-currentLength="+currentLength);
-      		  currentLength=currentLength+filelength;
-      		  System.out.println("current--currentLength="+currentLength);
-      		  if(currentLength>=maxQueueLength) 
+      	 	  file_number++;
+      	 	  currentLength=currentLength+filelength;
+      	 	  System.out.println("fileName: "+path);   
+      	 	  System.out.println("SendFilequeue Information:"+file_number+" 个 "+currentLength+" Byte");
+      		  if(currentLength>=maxQueueLength||file_number>=maxNumber) 
       		  {
-      			ishandle=false;
-      			System.out.println("###队列超过了最大容量,进行处理");
-    		    listenqueue.handleQueue(SendFilequeue);
-    		    ishandle=true;
+      			
+      			 synchronized(listenqueue.queueListen_List)
+      			  {
+      			  for(int i=0;i<listenqueue.queueListen_List.size();i++)
+      				 listenqueue.queueListen_List.get(i).cancel();
+      			     listenqueue.queueListen_List.clear();
+      			  }
+      			 Timer queueTimer=new Timer(true);
+      			 QueueListenTask queueTask=new QueueListenTask();
+      			 queueTimer.schedule(queueTask, FileSharing.sleeptime);
+      			 listenqueue.queueListen_List.add(queueTimer);
+      			 
+      			 System.out.println("###队列超过了最大容量或是文件数量达到了最大数量,进行处理");
+      			 System.out.println("重新计时："+System.currentTimeMillis()); 
+    		    listenqueue.handleQueue(SendFilequeue); 
       		  }	
-      		}	
-		}		
+      		}
+	     }		
   	   } //end 改变的是文件
+	 }
  }
     public class stopClickListener implements OnClickListener 
     {
@@ -453,7 +591,7 @@ public class FileSharing extends Activity
     public String getIp()
 	{  
     	//Adhoc模式下获取IP
-//  /*  
+// /*  
     	String networkIp = "";  
     	try {  
     	    List<NetworkInterface> interfaces = Collections.list(NetworkInterface.getNetworkInterfaces());  
@@ -530,6 +668,8 @@ public class OtherTask extends java.util.TimerTask
    System.out.println("sending time:"+total_sending_timer+" ms");
    System.out.println("sending length:"+total_sending_length/1024+" k"+"\r\n");
    System.out.println("encode time:"+total_encode_timer+" ms");
+  
+   encodedPacket.clear();
    if(mFileObserver!=null ) 
 	 mFileObserver.stopWatching(); //停止监听
    if(recvHandler!=null)

@@ -41,7 +41,7 @@ public class sendThread
 	
 	public synchronized void sendPacket(Packet pt,String sub_fileID,int i)
 	{
-		
+		long start=System.currentTimeMillis();	
 		byte[] messages=null;
 		try {  
 	         ByteArrayOutputStream baos = new ByteArrayOutputStream();  
@@ -52,7 +52,7 @@ public class sendThread
 	         oos.close(); 
 	         packet = new DatagramPacket(messages, messages.length,addr, port);        
 	         socket.send(packet);
-	       //  System.out.println("·¢ËÍING "+sub_fileID+"---packet:"+i);
+	       //System.out.println("·¢ËÍING "+sub_fileID+"---packet:"+i);
 	        }  
 		    catch (SocketException e) 
 	        {
@@ -63,6 +63,11 @@ public class sendThread
 	            e.printStackTrace();  
 	        } 
 		 FileSharing.total_sending_length+=messages.length;
+		 long end=System.currentTimeMillis();
+		 FileSharing.total_sending_timer+=(end-start);
+		 
+		 String []bb=sub_fileID.split("-");
+		 FileSharing.writeLog("send-one-packet:"+bb[1]+"--"+bb[bb.length-1]+"---"+i+",	"+(end-start)+"ms,	"+"\r\n");
 	}
 		
     public synchronized void sending() 
@@ -97,9 +102,8 @@ public class sendThread
 			}
 	    }	
 		 long end=System.currentTimeMillis();
-		 FileSharing.total_sending_timer+=(end-start);
 		 String []bb=plist[0].sub_fileID.split("-");
-		 FileSharing.writeLog("sendThread:"+bb[1]+"--"+bb[bb.length-1]+",	"+(end-start)+"ms,	"+"\r\n");
+		 FileSharing.writeLog("send-one-block:"+bb[1]+"--"+bb[bb.length-1]+",	"+(end-start)+"ms,	"+"\r\n");
     }
 
 	public void destroy() 

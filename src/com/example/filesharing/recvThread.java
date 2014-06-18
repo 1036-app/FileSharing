@@ -127,7 +127,7 @@ public class recvThread extends Thread
 				 }
 					Random random = new Random();
 					long delay=fund_time+random.nextInt(fund_time);
-					long frequency=fund_time+fund_time;
+					long frequency=fund_time*5;
 					//添加包计时器
 					recvtask=new recvTask(pt.sub_fileID);
 					recvtimer = new Timer(true);

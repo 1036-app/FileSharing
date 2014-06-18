@@ -1,6 +1,7 @@
 package com.example.filesharing;
 
 import java.io.BufferedOutputStream;
+import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -32,7 +33,7 @@ public class fecFuntion
 				data_blocks = subFileLength/FileSharing.blocklength+1;
 				lastlength= subFileLength%FileSharing.blocklength;
 			}
-             coding_blocks= (int)Math.ceil(data_blocks*20/100);
+            coding_blocks= (int)Math.ceil(data_blocks*20/100)+1;
  			//coding_blocks = data_blocks;
  			plist = new Packet[coding_blocks+data_blocks];
  			byte[][] origindata = new byte[data_blocks][FileSharing.blocklength];
@@ -161,9 +162,16 @@ public class fecFuntion
     	{
     	  String message="生成文件";
     	  FileSharing.messageHandle(message);
-    	  FileSharing.recvFiles.add(recvFilename);  //放入接收文件列表
-    	  try {
-    		String encodeFile=sharedPath+"//"+recvFilename;
+    	  FileSharing.recvFiles.add(plist[0].filename);  //放入接收文件列表
+    	  String []directory=plist[0].filename.split("/");
+    	  String dire="";
+    	  for(int kk=0;kk<directory.length-1;kk++)
+    		  dire+="/"+directory[kk];
+    	   File ff=new File(dire);
+           if(!ff.exists())
+        	   ff.mkdirs();
+    	   try {
+    		String encodeFile=dire+"/"+directory[directory.length-1];
     		BufferedOutputStream bos;
     		bos = new BufferedOutputStream(new FileOutputStream(encodeFile));
 			bos.write(writein);
@@ -176,7 +184,7 @@ public class fecFuntion
     	 SimpleDateFormat formatter = new SimpleDateFormat("HH-mm-ss-SSS");
 		 Date curDate = new Date(System.currentTimeMillis());
 		 String m = formatter.format(curDate);
-		 String mm="发送文件 "+fileID_break[0]+"的时间: "+m; 
+		 String mm="生成文件 "+fileID_break[0]+"的时间: "+m; 
 		 FileSharing.messageHandle(mm);
 		 FileSharing.writeLog(""+"\r\n");
 		 FileSharing.writeLog("%%%"+plist[0].filename+",	");
@@ -228,8 +236,15 @@ public class fecFuntion
         		 }
                  String message="开始生成文件";
                  FileSharing.messageHandle(message);
-                 FileSharing.recvFiles.add(recvFilename);  //放入接收文件列表中
-                 String encodeFile=sharedPath+"//"+recvFilename;
+                 FileSharing.recvFiles.add(plist[0].filename);  //放入接收文件列表中
+                 String []directory=plist[0].filename.split("/");
+           	     String dire="";
+           	     for(int kk=0;kk<directory.length-1;kk++)
+           		  dire+="/"+directory[kk];
+           	     File ff=new File(dire);
+                  if(!ff.exists())
+               	   ff.mkdirs();
+             	String encodeFile=dire+"/"+directory[directory.length-1];
                  RandomAccessFile raf=null;	
                    try {
 					raf = new RandomAccessFile(encodeFile,"rw");
@@ -294,9 +309,16 @@ public class fecFuntion
      		      recvsubfiles.add(sub_no);
      		      FileSharing.recv_subfiels_no.put(fileID_break[0], recvsubfiles);
     			}
-    			if(!FileSharing.recvFiles.contains(recvFilename))
-    				FileSharing.recvFiles.add(recvFilename);  //放入接收文件列表中
-    		      String encodeFile=sharedPath+"//"+recvFilename;
+    			if(!FileSharing.recvFiles.contains(plist[0].filename))
+    				FileSharing.recvFiles.add(plist[0].filename);  //放入接收文件列表中
+    			 String []directory=plist[0].filename.split("/");
+    	    	  String dire="";
+    	    	  for(int kk=0;kk<directory.length-1;kk++)
+    	    		  dire+="/"+directory[kk];
+    	    	   File ff=new File(dire);
+    	           if(!ff.exists())
+    	        	   ff.mkdirs();
+    	        String encodeFile=dire+"/"+directory[directory.length-1]; 
                   RandomAccessFile raf=null;
  				  try {
  					raf = new RandomAccessFile(encodeFile,"rw");

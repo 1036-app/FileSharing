@@ -1,43 +1,58 @@
 package com.example.filesharing;
 
 import java.io.BufferedInputStream;
+import java.io.File;
 import java.io.FileInputStream;
 import java.sql.Date;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Queue;
+import java.util.Timer;
 
 
 public class listenQueue extends Thread
 {
 	
 	public boolean running=true;
-	public int sleeptime=3000;  //计时3秒之后再执行该线程。
 	public ArrayList<SmallFileData >smallfiles=new ArrayList<SmallFileData >();
-	public int total_length=0;
+	public int small_total_length=0;
 	public String sharedPath="//sdcard//SharedFiles";
 	public sendFileFunction sendFunction=new sendFileFunction();
-	public void run()
+	ArrayList <Timer>queueListen_List=new ArrayList<Timer>();
+	public synchronized void run()
 	{
 	  while (running)
 	  {
-		 if(FileSharing.SendFilequeue.size()>0&&FileSharing.ishandle==true)
+		 if(FileSharing.SendFilequeue.size()>0)
 		 {
-			 System.out.println("@@@@进入listenQueue线程");
+			 System.out.println("@@@@进入listenQueue线程  "+System.currentTimeMillis());
 			 handleQueue(FileSharing.SendFilequeue);
 		 }
+		 Timer queueTimer=new Timer(true);
+		 QueueListenTask queueTask=new QueueListenTask();
+		 queueTimer.schedule(queueTask, FileSharing.sleeptime);
+		 queueListen_List.add(queueTimer);
 		 try {
-			sleep(sleeptime);  
+			wait();  
 		 } catch (InterruptedException e) 
 		 {
 			e.printStackTrace();
 		 }
 	  }
 	}
-
+	public synchronized void notifyThread()
+	{
+		notify();
+	}
 	public synchronized void ondestroy()
 	{
-		running=false;
+	   running=false;
+	   synchronized(queueListen_List)
+	   {
+	    for(int i=0;i<queueListen_List.size();i++)
+		    queueListen_List.get(i).cancel();
+	     queueListen_List.clear();
+      }
 	}
 	
 	public void handleQueue(Queue<String> SendFilequeue)
@@ -51,17 +66,21 @@ public class listenQueue extends Thread
 			    while(filename!=null)
 				{
 				  String id=Integer.toString(FileSharing.sendFileID);
-	 			  String file=sharedPath+"//"+filename;
+	 			  String file_id =FileSharing.ipaddress+"-"+id;
 	 			  int filelength=0;
 	 			  FileInputStream fis=null;
+	 			  File f=new File(filename);
+	 			  if(f.exists())
+	 			  {
 	 				try {
-	 					fis = new FileInputStream(file);
+	 					fis = new FileInputStream(filename);
 	 					filelength = fis.available();
 	 				} catch (Exception e) {
 	 					e.printStackTrace();
 	 				}
 	 			  if(filelength>=FileSharing.maxfilelength)  
 	 				{ 
+	 					System.out.println("文件>100k");
 	 				SimpleDateFormat formatter = new SimpleDateFormat("HH-mm-ss-SSS");
 	 			    Date curDate = new Date(System.currentTimeMillis());
 	 			    String m = formatter.format(curDate);
@@ -88,12 +107,12 @@ public class listenQueue extends Thread
 	 					  String sub_id =FileSharing.ipaddress+"-"+id+"--"+i;
 	 					  sendFunction.sendToAll(filename,filelength, sub_id,num);
 	 			          long end=System.currentTimeMillis();
-	 				      FileSharing.writeLog("blockSpentTime:"+id+"--"+i+",	"+(end-start)+"ms,	"+"\r\n");
-	 					
-	 				  }
+	 				      FileSharing.writeLog("blockSpentTime:"+id+"--"+i+",	"+(end-start)+"ms,	"+"\r\n"); 					 
+	 					}
 	 		        }	
-	 			else	//多个小文件凑成一个大文件
+	 			else if(filelength>0)	//多个小文件凑成一个大文件
 	 			{
+	 				System.out.println("该文件<100k");
 	 				if(SendFilequeue.size()==1)  //当前文件是队列中的最后一个
 	 				{
 	 					if(smallfiles.size()==0)   //小文件链表为0
@@ -118,8 +137,8 @@ public class listenQueue extends Thread
 	 					    String sub_id =FileSharing.ipaddress+"-"+id+"--"+0;
 	 					    SmallFileData  sf=new SmallFileData (filename,filelength,sub_id);
 	 	   					smallfiles.add(sf);
-	 	   				    total_length=total_length+filelength;
-	 	   				    sendFunction.sendSmallFiles(smallfiles ,total_length);
+	 	   			     	small_total_length=small_total_length+filelength;
+	 	   				    sendFunction.sendSmallFiles(smallfiles ,small_total_length);
 	 	   				    smallfiles.clear();
 	 					}
 	 				}
@@ -128,21 +147,23 @@ public class listenQueue extends Thread
 	 				    String sub_id =FileSharing.ipaddress+"-"+id+"--"+0;
 	 				    SmallFileData  sf=new SmallFileData (filename,filelength,sub_id);
 	 					smallfiles.add(sf);	
-	 					total_length=total_length+filelength;
+	 					small_total_length=small_total_length+filelength;
 	 				}
 	 			}
 	 			 SendFilequeue.remove();
 	 			 FileSharing.sendFiles.put(FileSharing.ipaddress+"-"+id, filename);
 	 			 FileSharing.sendFileID++;  
 	 			 filename=SendFilequeue.peek();
-	 			
+	 			  }
 		       }  //内层while循环结束
 			    FileSharing.currentLength=0; 
+			    FileSharing.file_number=0;
 			    if(smallfiles.size()>0) 
 			    {
-			    	sendFunction.sendSmallFiles(smallfiles,total_length);
+			    	sendFunction.sendSmallFiles(smallfiles,small_total_length);
 		   		    smallfiles.clear();
 			    }	
+			    small_total_length=0;
 		   }
 		 } //end synchronized queue	
 	 }

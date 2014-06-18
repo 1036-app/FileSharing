@@ -12,7 +12,6 @@ public class sendFile_blockThread extends Thread
 	public  String fileid=null;
 	public  int num=0;
 	public  String fileName=null;
-	public  String sharedPath="//sdcard//SharedFiles";
 	public sendFileFunction sendFunction=new sendFileFunction();
 	
 	sendFile_blockThread(String fileid,ArrayList<Integer> nos,int num)
@@ -28,8 +27,10 @@ public class sendFile_blockThread extends Thread
 		 long filelength=0;
 	     Timer subfiletimer = null;
 		 fileName=FileSharing.sendFiles.get(fileid);
-	     String file=sharedPath+"//"+fileName;
+	     String file=fileName;
 	     File ff=new File(file);
+	    if(ff.exists())
+		{
 	     RandomAccessFile raf=null;	
          try {
 			raf = new RandomAccessFile(ff,"r");
@@ -38,6 +39,7 @@ public class sendFile_blockThread extends Thread
 		  {
 			e.printStackTrace();
 		  }
+	
 			for(int l=0;l<nos.size();l++)
 			{
 				System.out.println("sendFile_blockThread wait SendFilequeue");
@@ -53,8 +55,8 @@ public class sendFile_blockThread extends Thread
 				System.out.println(fileid+" 发送wenjian的快号： "+nos.get(l));	
 		 		System.out.println("##########发送数据长度：  "+length);	
 		 		String sub_id =fileid+"--"+nos.get(l);
-		 		EncodingThread encoding=new EncodingThread (data,length,sub_id ,fileName,num,filelength );
-				encoding.start();
+		 		EncodingThread encodeThread=new EncodingThread(data,length,sub_id ,fileName,num,filelength );
+				encodeThread.start();
 		 		Packet[]sendPacket=null;
 		 	 	sendPacket=sendFunction.file_blocks(data,length,sub_id,fileName,num,filelength);
 		 	 	if(sendPacket!=null)
@@ -65,6 +67,7 @@ public class sendFile_blockThread extends Thread
 		 		  FileSharing.messageHandle(message);	
 		 		 }
 		} //end for
+	  
 	      synchronized(FileSharing.Feedpkts)
 	         {
 		           for(int kk=0;kk<FileSharing.Feedpkts.size();kk++)
@@ -76,6 +79,7 @@ public class sendFile_blockThread extends Thread
 		 	           }
 		             }
 	            }
-	}		
+	     }		 
+	    }
 	
 }

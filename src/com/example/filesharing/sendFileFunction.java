@@ -1,6 +1,7 @@
 package com.example.filesharing;
 
 import java.io.BufferedInputStream;
+import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.sql.Date;
@@ -9,19 +10,19 @@ import java.util.ArrayList;
 import java.util.Timer;
 
 public class sendFileFunction {
-	public String sharedPath = "//sdcard//SharedFiles";
 	public final int maxPackets=FileSharing.maxfilelength/FileSharing.blocklength;
 
-	public void sendSmallFiles(ArrayList<SmallFileData > sfiles, int total_length) {
+	public void sendSmallFiles(ArrayList<SmallFileData > sfiles,int total_length) 
+	{
 		int number = 0;
 		if (total_length % FileSharing.maxfilelength == 0)
 			number = total_length / FileSharing.maxfilelength;
 		else
 			number = total_length / FileSharing.maxfilelength + 1;
 		Packet[][] plist = new Packet[number][FileSharing.maxfilelength/ FileSharing.blocklength];
-		System.out.println("number== " + number);
+		System.out.println("这些小文件总共需要的发送的次数：" + number);
 		int n = 0;
-		int srtartblock = 0;
+		int startblock = 0;
 		int from = 0;
 		int to = 0;
 		String[] fileID_break = null;
@@ -45,51 +46,61 @@ public class sendFileFunction {
 			int sub_no = Integer.parseInt(fileID_break[1]);
 			if (!FileSharing.sendFiles.containsKey(fileID_break[0]))
 				FileSharing.sendFiles.put(fileID_break[0], sfiles.get(ii).filename);
-			String file = sharedPath + "//" + sfiles.get(ii).filename;
+			String file = sfiles.get(ii).filename;
 			int data_blocks;
 			int coding_blocks = 0;
 
 			int lastlength = FileSharing.blocklength;
 			byte[] data = new byte[FileSharing.maxfilelength];
+			File f=new File(file);
+			int length=0;
+			if(f.exists())
+			{
 			try {
 				fis = new FileInputStream(file);
 				in = new BufferedInputStream(fis);
 				in.skip(FileSharing.maxfilelength * sub_no);
-				in.read(data, 0, FileSharing.maxfilelength);
+				length=in.read(data, 0, FileSharing.maxfilelength);
 				in.close();
 			} catch (IOException e) {
 				e.printStackTrace();
 			}
+			}
 			if (sfiles.get(ii).filelength % FileSharing.blocklength == 0) {
 				data_blocks = sfiles.get(ii).filelength/ FileSharing.blocklength;
-			} else {
+			} 
+			else 
+			{
 				data_blocks = sfiles.get(ii).filelength/ FileSharing.blocklength + 1;
 				lastlength = sfiles.get(ii).filelength% FileSharing.blocklength;
 			}
-			System.out.println("该文件的data_blocks  " + data_blocks);
+			System.out.println("该文件的数据包  " + data_blocks);
 			//对块进行编码
-		//	EncodingThread encoding=new EncodingThread (data,length,sfiles.get(ii).sub_fileid,sfiles.get(ii).filename,num,sfiles.get(ii).filelength );
-		//	encoding.start();
-			
-			if (srtartblock == 0) {
-				srtartblock = data_blocks;
+			  EncodingThread encodeThread=new EncodingThread(data,length,sfiles.get(ii).sub_fileid,sfiles.get(ii).filename,1,sfiles.get(ii).filelength);
+			  encodeThread.start();
+			if (startblock == 0) 
+			{
+				startblock = data_blocks;
 				from = 0;
 				to = data_blocks;
-			} else {
-				from = srtartblock;
+			} 
+			else
+			{
+				from = startblock;
 				to = from + data_blocks;
-				srtartblock = to;
+				startblock = to;
 				if (to >= maxPackets)
 				{
-					srtartblock = to - maxPackets;
+					startblock = to - maxPackets;
 					to = maxPackets;
 				}
 			}
-			for (int k = from; k < to; k++) {
+			for (int k = from; k < to; k++) 
+			{
 				byte[] filedata = new byte[FileSharing.blocklength];
 				System.arraycopy(data, (k - from) * FileSharing.blocklength,filedata, 0, FileSharing.blocklength);
 				int send_blockLength = 0;
-				if (k == data_blocks - 1)
+				if ((k - from)== data_blocks- 1)
 					send_blockLength = lastlength;
 				else
 					send_blockLength = FileSharing.blocklength;
@@ -108,11 +119,11 @@ public class sendFileFunction {
 			}
 			if (to == maxPackets) 
 			{
-				 FileSharing.sThread.inital(plist[n],FileSharing.bcastaddress, FileSharing.port, 0, 100, 1);
+				 FileSharing.sThread.inital(plist[n],FileSharing.bcastaddress, FileSharing.port, 0, maxPackets, 1);
 				 FileSharing.sThread.sending();
-				n++;
+				 n++;
 				System.out.println("已经够100块开始发送");
-				for (int j = 0; j < srtartblock; j++)
+				for (int j = 0; j < startblock; j++)
 				{
 					byte[] filedata = new byte[FileSharing.blocklength];
 					System.arraycopy(data, (j + maxPackets - from)* FileSharing.blocklength, filedata, 0,FileSharing.blocklength);
@@ -133,9 +144,9 @@ public class sendFileFunction {
 				}
 			}
 		} // for循环结束
-		if (plist[0] != null) 
+		if (startblock!=0) 
 		{
-			 FileSharing.sThread.inital(plist[n], FileSharing.bcastaddress,FileSharing.port, 0, srtartblock, 1);
+			 FileSharing.sThread.inital(plist[n], FileSharing.bcastaddress,FileSharing.port, 0, startblock, 1);
 			 FileSharing.sThread.sending();
 		}
 	}
@@ -148,23 +159,29 @@ public class sendFileFunction {
 		String[] fileID_break = null;
 		fileID_break = sub_fileid.split("--");
 		int sub_no = Integer.parseInt(fileID_break[1]);
-		String file = sharedPath + "//" + filename;
 		byte[] data = new byte[FileSharing.maxfilelength];
 		int length = 0;
+		File f=new File(filename);
+		if(f.exists())
+		{
 		try {
-			fis = new FileInputStream(file);
+			fis = new FileInputStream(filename);
 			in = new BufferedInputStream(fis);
 			in.skip(FileSharing.maxfilelength * sub_no);
 			length = in.read(data, 0, FileSharing.maxfilelength);
-		} catch (IOException e) {
+		   } catch (IOException e)
+		   {
 			e.printStackTrace();
+		   }
 		}
 		//对块进行编码
-		EncodingThread encoding=new EncodingThread (data,length,sub_fileid,filename,num,filelength );
-		encoding.start();
-		sendPacket = file_blocks(data, length, sub_fileid, filename, num,
-				filelength);
-		
+		if(length>0)
+		{
+		  System.out.println("待编码的长度： "+length);
+		  EncodingThread encodeThread=new EncodingThread(data,length,sub_fileid,filename,num,filelength);
+		  encodeThread.start();
+		  sendPacket = file_blocks(data, length, sub_fileid,filename, num,filelength);
+		}
 		if (sendPacket != null)
 		{
 			FileSharing.sThread.inital(sendPacket,FileSharing.bcastaddress,FileSharing.port,0,
@@ -182,8 +199,7 @@ public class sendFileFunction {
 		int data_blocks;
 		int coding_blocks = 0;
 		Packet[] plist = null;
-		int lastlength = FileSharing.blocklength;
-
+		int lastlength = FileSharing.blocklength;	
 		if (subFileLength % FileSharing.blocklength == 0) 
 		{
 			data_blocks = subFileLength / FileSharing.blocklength;
@@ -212,8 +228,9 @@ public class sendFileFunction {
 			plist[i] = p;
 			p.sub_fileID = sub_fileID;
 		}
-		synchronized (FileSharing.nextseq) {
-			FileSharing.nextseq.put(plist[0].sub_fileID, data_blocks); // 下一次从plist[0]开始发，其中只放的是冗余包。
+		synchronized (FileSharing.nextseq)
+		{
+		  FileSharing.nextseq.put(plist[0].sub_fileID, data_blocks); // 下一次从plist[0]开始发，其中只放的是冗余包。
 		}
 		return plist;
 	}
