@@ -14,8 +14,8 @@ import eu.vandertil.jerasure.jni.ReedSolomon;
 
 public class fecFuntion 
 {
-	public  String sharedPath="//sdcard//SharedFiles";
-	public int maxStoredLength=1024*10240; //超过10m的文件则接收到文件块直接输出
+	//public  String sharedPath="//sdcard//SharedFiles";
+	
 	
 	public  synchronized Packet[] encode(byte[] filedata,int subFileLength,String sub_fileID,String filename,int totalsubFiles,long FileLength)
     {     
@@ -169,7 +169,10 @@ public class fecFuntion
     		  dire+="/"+directory[kk];
     	   File ff=new File(dire);
            if(!ff.exists())
+           {
         	   ff.mkdirs();
+        	   FileSharing.recvFiles.add(dire);
+           }
     	   try {
     		String encodeFile=dire+"/"+directory[directory.length-1];
     		BufferedOutputStream bos;
@@ -243,7 +246,10 @@ public class fecFuntion
            		  dire+="/"+directory[kk];
            	     File ff=new File(dire);
                   if(!ff.exists())
+                  {
                	   ff.mkdirs();
+               	   FileSharing.recvFiles.add(dire);
+                  }
              	String encodeFile=dire+"/"+directory[directory.length-1];
                  RandomAccessFile raf=null;	
                    try {
@@ -293,7 +299,7 @@ public class fecFuntion
     	else
     	{
     		//收到了大于10m的文件或者第一次收到<10m的文件
-    		if(plist[0].fileLength>maxStoredLength)  //文件的长度大于10m,直接写出
+    		if(plist[0].fileLength>FileSharing.maxStoredLength)  //文件的长度大于10m,直接写出
     		{
     			if(FileSharing.sub_nums.containsKey(fileID_break[0]))
     			{   //以前已经收到过大于10m的文件块
@@ -317,7 +323,10 @@ public class fecFuntion
     	    		  dire+="/"+directory[kk];
     	    	   File ff=new File(dire);
     	           if(!ff.exists())
+    	           {
     	        	   ff.mkdirs();
+    	        	   FileSharing.recvFiles.add(dire);
+    	           }
     	        String encodeFile=dire+"/"+directory[directory.length-1]; 
                   RandomAccessFile raf=null;
  				  try {

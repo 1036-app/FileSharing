@@ -12,9 +12,13 @@
          android:textColor="@android:color/black" 
          android:text="提示信息" /> 
          
+ <Button android:id="@+id/syncbutton" 
+      android:layout_width="fill_parent" 
+      android:layout_height="wrap_content"
+       android:text="synchronized" />            
 <ScrollView android:id="@+id/sv_show" 
         android:layout_width="fill_parent" 
-        android:layout_height="570px"
+        android:layout_height="520px"
         android:background="@android:color/darker_gray" 
         android:scrollbarAlwaysDrawVerticalTrack="true" 
         android:scrollbars="vertical" > 

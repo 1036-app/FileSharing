@@ -1,6 +1,4 @@
 package com.example.filesharing;
-
-import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.sql.Date;
@@ -16,7 +14,6 @@ public class listenQueue extends Thread
 	public boolean running=true;
 	public ArrayList<SmallFileData >smallfiles=new ArrayList<SmallFileData >();
 	public int small_total_length=0;
-	public String sharedPath="//sdcard//SharedFiles";
 	public sendFileFunction sendFunction=new sendFileFunction();
 	ArrayList <Timer>queueListen_List=new ArrayList<Timer>();
 	public synchronized void run()

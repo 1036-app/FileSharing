@@ -6,6 +6,7 @@ import java.io.ObjectInputStream;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.SocketException;
 import java.util.ArrayList;
 import java.util.Date;
@@ -42,14 +43,17 @@ public class recvThread extends Thread
 	public final int fund_time=500; //决定多长时间没收到数据包就发送反馈包
 	recvThread(String localIP,int port)
 	{
+		
 		this.localIP="/"+localIP;
 		this.port=port;
 	}
 	public void init()
 	{
-		try {
-			socket = new DatagramSocket(port);
-			socket.setBroadcast(true);
+		try {	
+			socket= new DatagramSocket(null); 
+			socket.setReuseAddress(true); 
+			socket.bind(new InetSocketAddress(port)); 
+			socket.setBroadcast(true);		
 			encodedFrame=new byte[FileSharing.blocklength+1000];
 		
 		} catch (Exception e) 
@@ -94,7 +98,7 @@ public class recvThread extends Thread
 			    System.out.println(e.toString());
 			    e.printStackTrace();
 			  } 
-	//	   System.out.println("接收到子包的id号："+pt.sub_fileID);
+		   System.out.println("接收到子包的id号："+pt.sub_fileID);
 		   if(pt.type==1||pt.type==2)
 		   {
 			   recvPacket=new Packet[1];
